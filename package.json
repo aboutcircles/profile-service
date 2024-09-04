@@ -1,0 +1,28 @@
+{
+  "name": "@aboutcircles/profile-pinning-service",
+  "version": "0.1.4",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "npx tsc"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/connect-timeout": "^0.0.39",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "typescript": "^5.5.3"
+  },
+  "author": "",
+  "license": "MIT",
+  "description": "",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "connect-timeout": "^1.9.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "kubo-rpc-client": "4.1.1",
+    "lru-cache": "^11.0.0",
+    "sharp": "^0.33.4",
+    "winston": "^3.13.1"
+  }
+}
