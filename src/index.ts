@@ -4,6 +4,42 @@ import cors from 'cors';
 import sharp from 'sharp';
 import timeout from 'connect-timeout';
 import {LRUCache} from 'lru-cache';
+import {ethers} from "ethers";
+
+import knex from 'knex';
+
+export const db = knex({
+    client: 'sqlite3',
+    connection: {
+        filename: './profiles.db'
+    },
+    useNullAsDefault: true
+});
+
+db.schema.hasTable('profiles').then(exists => {
+    if (!exists) {
+        return db.schema.createTable('profiles', table => {
+            table.string('avatar').primary();
+            table.string('cid');
+            table.string('name');
+        }).then(() => {
+            // Create full-text index on 'name'
+            return db.raw('CREATE VIRTUAL TABLE profiles_fts USING fts5(name, content=\'profiles\', content_rowid=\'rowid\');');
+        });
+    }
+});
+
+const upsertProfile = async (profile: any) => {
+    await db('profiles').insert(profile).onConflict('avatar').merge();
+
+    // Update full-text search table
+    await db('profiles_fts').insert({rowid: profile.avatar, name: profile.name}).onConflict('rowid').merge();
+};
+
+const getCidByAvatar = async (avatar: string): Promise<string | null> => {
+    const result = await db('profiles').where({avatar}).select('cid').first();
+    return result ? result.cid : null;
+};
 
 import('kubo-rpc-client').then(kudo => {
     const app = express();
@@ -87,6 +123,10 @@ import('kubo-rpc-client').then(kudo => {
 
     const validateProfile = async (profile: any) => {
         const errors = [];
+
+        if (!profile.avatar || typeof profile.avatar !== 'string' || !ethers.isAddress(profile.avatar)) {
+            errors.push('Avatar is required and must be a valid Ethereum address.');
+        }
 
         if (!profile.name || typeof profile.name !== 'string' || profile.name.length > config.maxNameLength) {
             errors.push(`Name is required and must be a string with a maximum length of ${config.maxNameLength} characters.`);
@@ -179,7 +219,7 @@ import('kubo-rpc-client').then(kudo => {
             const fetchPromises = validCidArray.map(cid => {
                 if (cid.isValid && !cid.isBlackListed) {
                     return getCachedProfile(cid.cid, config.defaultTimeout / 2)
-                } else if(!cid.isValid) {
+                } else if (!cid.isValid) {
                     return Promise.reject(new Error(`Invalid CID: ${cid.cid}`));
                 } else {
                     return Promise.reject(new Error(`The CID ${cid.cid} is blacklisted because it failed validation previously`));
@@ -224,18 +264,34 @@ import('kubo-rpc-client').then(kudo => {
     app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
         if (req.timedout) return;
 
-        console.log('Received profile for pinning:', req.body);
-
         const errors = await validateProfile(req.body);
         if (errors.length) {
             return res.status(400).json({errors});
         }
+        const avatar = req.body.avatar;
 
         try {
+            // Unpin old profile if exists
+            const oldCid = await getCidByAvatar(avatar);
+            if (oldCid) {
+                await ipfs.pin.rm(oldCid);
+
+                // Remove from cache
+                profileCache.delete(oldCid);
+            }
+
+            // Pin new profile
             const buffer = Buffer.from(JSON.stringify(req.body));
             const result = await ipfs.add(buffer);
             await ipfs.pin.add(result.cid);
-            if (req.timedout) return;
+
+            // Update SQLite with new CID
+            await upsertProfile({
+                avatar,
+                cid: result.cid.toString(),
+                name: req.body.name
+            });
+
             return res.json({cid: result.cid.toString()});
         } catch (error) {
             logError('Failed to pin file', error);
@@ -254,6 +310,28 @@ import('kubo-rpc-client').then(kudo => {
         } catch (error) {
             logError('Failed to connect to IPFS', error);
             if (req.timedout) return;
+            return res.status(500).json({error: (error as Error).message});
+        }
+    });
+
+    app.get('/search', haltOnTimedout, async (req: Request, res: Response) => {
+        if (req.timedout) return;
+
+        const query = req.query.q;
+        if (!query || typeof query !== 'string') {
+            return res.status(400).json({error: 'Search query is required'});
+        }
+
+        try {
+            // Search using full-text search
+            const results = await db('profiles')
+                .join('profiles_fts', 'profiles.avatar', '=', 'profiles_fts.rowid')
+                .where('profiles_fts', 'match', query)
+                .select('profiles.avatar', 'profiles.name', 'profiles.cid');
+
+            return res.json(results);
+        } catch (error) {
+            logError('Failed to search profiles', error);
             return res.status(500).json({error: (error as Error).message});
         }
     });
