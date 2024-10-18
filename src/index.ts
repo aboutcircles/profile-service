@@ -7,6 +7,7 @@ import {LRUCache} from 'lru-cache';
 import {ethers} from "ethers";
 
 import knex from 'knex';
+import {AvatarRow, CirclesData, CirclesQuery, CirclesRpc} from "@circles-sdk/data";
 
 export const db = knex({
     client: 'sqlite3',
@@ -29,6 +30,39 @@ db.schema.hasTable('profiles').then(exists => {
     }
 });
 
+const config = {
+    ipfs: {
+        host: process.env.IPFS_HOST || 'localhost',
+        port: process.env.IPFS_PORT || 5001,
+        protocol: process.env.IPFS_PROTOCOL || 'http',
+    },
+    corsOrigin: process.env.CORS_ORIGIN || '*',
+    maxImageSizeKB: parseInt(process.env.MAX_IMAGE_SIZE_KB || '150'),
+    descriptionLength: parseInt(process.env.DESCRIPTION_LENGTH || '500'),
+    imageUrlLength: parseInt(process.env.IMAGE_URL_LENGTH || '2000'),
+    imageDimension: parseInt(process.env.IMAGE_DIMENSION || '256'),
+    defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
+    maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
+    maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
+    cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200'),
+    circlesRpcUrl: process.env.CIRCLES_RPC_URL || 'http://localhost:8545',
+};
+
+/**
+ * Read all v2 avatars and the corresponding CIDs from the circles rpc endpoint.
+ */
+const initialize = async () => {
+    const rpc = new CirclesRpc(config.circlesRpcUrl);
+    const data = new CirclesData(rpc);
+
+    const v2AvatarsQuery = new CirclesQuery<AvatarRow>(roc, {
+        namespace: "V_CrcV2",
+        table: "Avatars",
+        columns: ["avatar", "cidV0Digest"],
+
+    })
+}
+
 const upsertProfile = async (profile: any) => {
     await db('profiles').insert(profile).onConflict('avatar').merge();
 
@@ -44,23 +78,6 @@ const getCidByAvatar = async (avatar: string): Promise<string | null> => {
 import('kubo-rpc-client').then(kudo => {
     const app = express();
     const port = process.env.PINNING_SERVICE_PORT || 3000;
-
-    const config = {
-        ipfs: {
-            host: process.env.IPFS_HOST || 'localhost',
-            port: process.env.IPFS_PORT || 5001,
-            protocol: process.env.IPFS_PROTOCOL || 'http',
-        },
-        corsOrigin: process.env.CORS_ORIGIN || '*',
-        maxImageSizeKB: parseInt(process.env.MAX_IMAGE_SIZE_KB || '150'),
-        descriptionLength: parseInt(process.env.DESCRIPTION_LENGTH || '500'),
-        imageUrlLength: parseInt(process.env.IMAGE_URL_LENGTH || '2000'),
-        imageDimension: parseInt(process.env.IMAGE_DIMENSION || '256'),
-        defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
-        maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
-        maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
-        cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200') // New configurable max size for the cache
-    };
 
     const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
 
