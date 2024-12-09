@@ -43,4 +43,5 @@ packages/abi/.contracts
 packages/tests/.contracts
 
 
-.env*
+.env.*
+data
