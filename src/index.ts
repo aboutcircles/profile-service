@@ -4,7 +4,7 @@ import cors from 'cors';
 import timeout from 'connect-timeout';
 
 import config from './config/config';
-import profilesRouter from './routes/profiles';
+import ProfileRepo from './repositories/profileRepo';
 import IndexerService from './services/indexerService';
 import KuboService from './services/kuboService';
 import { errorHandler } from './utils/errorHandler';
@@ -18,8 +18,6 @@ import('kubo-rpc-client').then(kubo => {
     app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
     app.use(bodyParser.json({limit: `${maxProfileSize / 1024}kb`}));
     app.use(timeout(`${config.defaultTimeout}ms`));
-
-    app.use('/profiles', profilesRouter);
 
     app.use(errorHandler);
 
@@ -137,6 +135,14 @@ import('kubo-rpc-client').then(kubo => {
             if (req.timedout) return;
             return res.status(500).json({error: (error as Error).message});
         }
+    });
+
+    app.get('/search', (req, res) => {
+        const query = req.query.query as string;
+        if (!query) return res.status(400).json({ error: 'Query parameter is required' });
+
+        const results = ProfileRepo.searchProfiles(query);
+        res.json(results);
     });
 
     app.listen(config.port, () => {
