@@ -13,20 +13,20 @@ class KuboService {
   blackList = new LRUCache<string, any>({max: 100000});
 
   constructor() {
-    console.log('constructing KuboService');
+    logInfo('constructing KuboService');
 
     this.initialize();
   }
 
   initialize = async () => {
-    console.log('Initializing KuboService');
+    logInfo('Initializing KuboService');
     const kubo = await import('kubo-rpc-client');
 
     this.ipfs = kubo.create(config.ipfsGateway);
   }
 
   addToBlackList = (cid: string) => {
-    console.log(`Adding CID to blacklist: ${cid}`);
+    logInfo(`Adding CID to blacklist: ${cid}`);
     this.blackList.set(cid, true);
   }
 
@@ -37,14 +37,14 @@ class KuboService {
   validateImage = async (dataUrl: string): Promise<boolean> => {
     const dataUrlPattern = /^data:image\/(png|jpeg|jpg|gif);base64,/;
     if (!dataUrlPattern.test(dataUrl)) {
-      console.error('Invalid data URL pattern');
+      logError('Invalid data URL pattern');
       return false;
     }
 
     const base64Data = dataUrl.replace(dataUrlPattern, '');
     const buffer = Buffer.from(base64Data, 'base64');
     if (buffer.length > config.maxImageSizeKB * 1024) {
-      console.error('Image size exceeds limit');
+      logError('Image size exceeds limit');
       return false;
     }
 
@@ -84,7 +84,7 @@ class KuboService {
   };
 
   fetchProfile = async (cid: string, timeoutInMs: number): Promise<any> => {
-    console.log(`Fetching profile for CID: ${cid}`);
+    logInfo(`Fetching profile for CID: ${cid}`);
 
     let profile;
     try {
@@ -92,7 +92,8 @@ class KuboService {
       profile = ipfsResponse.data;
     } catch (error) {
       this.addToBlackList(cid);
-      console.error('Failed to fetch profile', error);
+      // @ts-ignore
+      logError('Failed to fetch profile', error?.request?.res?.statusMessage ?? error);
       return;
     }
 
@@ -109,7 +110,7 @@ class KuboService {
     //   }
     // } catch (error) {
     //   // this.addToBlackList(cid);
-    //   console.error('Failed to fetch profile', error);
+    //   logError('Failed to fetch profile', error);
     //   // throw new Error('Failed to fetch profile');
     //   return;
     // }
@@ -122,7 +123,6 @@ class KuboService {
     //   throw new Error('Invalid JSON data');
     // }
 
-    console.log(`Validating profile fetched profile: ${cid} ${JSON.stringify(profile)}`);
     const errors = await this.validateProfile(profile);
     if (errors.length) {
       this.addToBlackList(cid);
@@ -134,7 +134,7 @@ class KuboService {
   getCachedProfile = async (cid: string, timeoutInMs: number): Promise<any> => {
     const cachedProfile = this.profileCache.get(cid);
     if (cachedProfile) {
-      console.log(`Cache hit for CID: ${cid}`);
+      logInfo(`Cache hit for CID: ${cid}`);
       return cachedProfile;
     }
 

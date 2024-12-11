@@ -1,16 +1,14 @@
 import axios from 'axios';
-import { hexToNumber } from 'viem';
 
 import config from '../config/config';
 import ProfileRepo, { Profile } from '../repositories/profileRepo';
 import EventQueue from '../queue/eventQueue';
-import { convertMetadataDigestToCID } from '../utils/converters';
+import { uint8ArrayToCidV0 } from '../utils/converters';
+import { logError, logInfo } from '../utils/logger';
 
 import KuboService from './kuboService';
 
 /* todo:
-- use circlesData for fetching block and missed events
-- update logs (make it less)
 - check for reorgs
  */
 
@@ -38,7 +36,6 @@ class IndexerService {
   }
 
   private async fetchLatestBlock(): Promise<number> {
-    console.log(config.rpcEndpoint);
     const response = await axios.post(config.rpcEndpoint, {
       jsonrpc: '2.0',
       id: 1,
@@ -49,16 +46,11 @@ class IndexerService {
   }
 
   private async catchUpOnMissedEvents(fromBlock: number, toBlock: number): Promise<void> {
-    const response = await axios.post(config.rpcEndpoint, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'circles_events',
-      params: [null, fromBlock + 1, toBlock, ['CrcV2_UpdateMetadataDigest']],
-    });
+    const response = await this.circlesData.getEvents(null, fromBlock + 1, toBlock, ['CrcV2_UpdateMetadataDigest']);
+    // ascending order
+    const events = response.reverse();
 
-    const events = response.data.result || [];
-
-    console.log('Catching up on missed events: ', events.length);
+    logInfo('Catching up on missed events: ', events.length);
 
     for (const event of events) {
       await this.processEvent(event);
@@ -66,22 +58,23 @@ class IndexerService {
   }
 
   private async processEvent(event: any): Promise<void> {
-    console.log({ event });
+    logInfo(`Processing event from tx: ${event.transactionHash}, blockNumber: ${event.blockNumber}`);
 
-    const { avatar, metadataDigest, blockNumber } = event.values;
-    const CID = convertMetadataDigestToCID(metadataDigest);
+    const { avatar, metadataDigest, blockNumber } = event;
+    // remove 0x prefix
+    const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
     const profileData = await KuboService.getCachedProfile(CID, config.defaultTimeout / 2);
 
-    console.log({ profileData })
     if (!profileData) {
-      console.error(`Failed to fetch profile data for CID: ${CID}`);
+      logError(`Failed to fetch profile data for CID: ${CID}`);
       return;
     }
+    logInfo(`Profile proccessed for CID: ${CID}, avatar: ${avatar}, name: ${profileData.name}`);
 
     const profile: Profile = {
       address: avatar,
       CID,
-      lastUpdatedAt: hexToNumber(blockNumber),
+      lastUpdatedAt: blockNumber,
       name: profileData.name,
       description: profileData.description,
     };
@@ -93,7 +86,7 @@ class IndexerService {
     const events = await this.circlesData.subscribeToEvents();
 
     events.subscribe((event: any) => {
-      console.log('Event received: ', event.$event);
+      logInfo('Event received: ', event.$event);
 
       if (event.$event === 'CrcV2_UpdateMetadataDigest') {
         if (this.initialization) {

@@ -1,3 +1,5 @@
+import { logError } from '../utils/logger';
+
 class EventQueue<T> {
   private queue: T[] = [];
   private isProcessing: boolean = false;
@@ -21,7 +23,7 @@ class EventQueue<T> {
           try {
             await processEvent(event); // Process the event
           } catch (err) {
-            console.error("Error processing event:", err);
+            logError("Error processing event:", err);
           }
         }
       }

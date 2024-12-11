@@ -65,7 +65,7 @@ import('kubo-rpc-client').then(kubo => {
                 }
             });
             const profiles = await Promise.all(fetchPromises.map(p => p.catch(e => {
-                logInfo('Failed to fetch profile', e);
+                logError('Failed to fetch profile', e);
                 return null;
             })));
             if (req.timedout) return;
@@ -87,7 +87,7 @@ import('kubo-rpc-client').then(kubo => {
             return res.status(400).json({error: 'CID is blacklisted because it failed validation previously'});
         }
 
-        console.log(`Received request for profile with CID: ${req.query.cid}`);
+        logInfo(`Received request for profile with CID: ${req.query.cid}`);
 
         try {
             const profile = await KuboService.getCachedProfile(req.query.cid as string, config.defaultTimeout - 30);
@@ -103,7 +103,7 @@ import('kubo-rpc-client').then(kubo => {
     app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
         if (req.timedout) return;
 
-        console.log('Received profile for pinning:', req.body);
+        logInfo('Received profile for pinning:', req.body);
 
         const errors = await KuboService.validateProfile(req.body);
         if (errors.length) {
@@ -125,7 +125,7 @@ import('kubo-rpc-client').then(kubo => {
 
     app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
         if (req.timedout) return;
-        console.log('Health check initiated');
+        logInfo('Health check initiated');
         try {
             await KuboService.ipfs.id();
             if (req.timedout) return;
@@ -146,11 +146,11 @@ import('kubo-rpc-client').then(kubo => {
     });
 
     app.listen(config.port, () => {
-        console.log(`Server is running at http://localhost:${config.port}`);
+        logInfo(`Server is running at http://localhost:${config.port}`);
     });
 
     process.on('SIGINT', () => {
-        console.log('Shutting down...');
+        logInfo('Shutting down...');
         process.exit(0);
     });
 });
