@@ -1,22 +1,36 @@
 import axios from 'axios';
-import WebSocket, { MessageEvent } from 'ws';
 import { hexToNumber } from 'viem';
+
 import config from '../config/config';
 import ProfileRepo, { Profile } from '../repositories/profileRepo';
-import eventQueue from '../queue/eventQueue';
+import EventQueue from '../queue/eventQueue';
 import { convertMetadataDigestToCID } from '../utils/converters';
 
 import KuboService from './kuboService';
 
+/* todo:
+- use circlesData for fetching block and missed events
+- update logs (make it less)
+- check for reorgs
+ */
+
 class IndexerService {
-  private ws: WebSocket | null = null;
+  private circlesData: any;
+  private eventQueue = new EventQueue<any>();
 
   async initialize(): Promise<void> {
+    const { CirclesRpc, CirclesData } = await import('@circles-sdk/data');
+
+    const circlesRpc = new CirclesRpc(config.rpcEndpoint);
+    this.circlesData = new CirclesData(circlesRpc);
+
     const latestBlock = await this.fetchLatestBlock();
     const lastProcessedBlock = ProfileRepo.getLastProcessedBlock();
 
-    await this.catchUpOnMissedEvents(lastProcessedBlock, latestBlock);
+    // subscribe to events before awaiting catchUpOnMissedEvents for accumulating new events to queue
     this.startWebSocketSubscription();
+    await this.catchUpOnMissedEvents(lastProcessedBlock, latestBlock);
+    await this.eventQueue.process(this.processEvent);
   }
 
   private async fetchLatestBlock(): Promise<number> {
@@ -48,10 +62,13 @@ class IndexerService {
   }
 
   private async processEvent(event: any): Promise<void> {
+    console.log({ event });
+
     const { avatar, metadataDigest, blockNumber } = event.values;
     const CID = convertMetadataDigestToCID(metadataDigest);
     const profileData = await KuboService.getCachedProfile(CID, config.defaultTimeout / 2);
 
+    console.log({ profileData })
     if (!profileData) {
       console.error(`Failed to fetch profile data for CID: ${CID}`);
       return;
@@ -68,31 +85,12 @@ class IndexerService {
     ProfileRepo.upsertProfile(profile);
   }
 
-  private startWebSocketSubscription(): void {
-    console.log(config.wsEndpoint);
-    this.ws = new WebSocket(config.wsEndpoint);
+  private async startWebSocketSubscription(): Promise<void> {
+    const events = await this.circlesData.subscribeToEvents();
 
-    this.ws.on('message', (event: MessageEvent) => {
-      const message = JSON.parse(event.data as unknown as string);
-      const { id, method, params } = message;
-      console.log({ event, message, id, method, params });
-      if (event.type === 'CrcV2_UpdateMetadataDigest') {
-        eventQueue.add({ event, processEvent: this.processEvent.bind(this) });
-      }
-    });
-
-    this.ws.onmessage = (event: MessageEvent) => {
-      const message = JSON.parse(event.data as unknown as string);
-      const { id, method, params } = message;
-      console.log({ event, message, id, method, params });
-      if (event.type === 'CrcV2_UpdateMetadataDigest') {
-        eventQueue.add({ event, processEvent: this.processEvent.bind(this) });
-      }
-    }
-
-    this.ws.on('close', () => {
-      console.warn('WebSocket closed. Reconnecting...');
-      setTimeout(() => this.startWebSocketSubscription(), 1000);
+    events.subscribe((event: any) => {
+      console.log('Event received: ', event);
+      this.eventQueue.enqueue(event);
     });
   }
 }
