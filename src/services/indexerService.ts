@@ -17,8 +17,10 @@ import KuboService from './kuboService';
 class IndexerService {
   private circlesData: any;
   private eventQueue = new EventQueue<any>();
+  private initialization = false;
 
   async initialize(): Promise<void> {
+    this.initialization = true;
     const { CirclesRpc, CirclesData } = await import('@circles-sdk/data');
 
     const circlesRpc = new CirclesRpc(config.rpcEndpoint);
@@ -31,6 +33,8 @@ class IndexerService {
     this.startWebSocketSubscription();
     await this.catchUpOnMissedEvents(lastProcessedBlock, latestBlock);
     await this.eventQueue.process(this.processEvent);
+
+    this.initialization = false;
   }
 
   private async fetchLatestBlock(): Promise<number> {
@@ -89,8 +93,15 @@ class IndexerService {
     const events = await this.circlesData.subscribeToEvents();
 
     events.subscribe((event: any) => {
-      console.log('Event received: ', event);
-      this.eventQueue.enqueue(event);
+      console.log('Event received: ', event.$event);
+
+      if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+        if (this.initialization) {
+          this.eventQueue.enqueue(event);
+        } else {
+          this.processEvent(event);
+        }
+      }
     });
   }
 }
