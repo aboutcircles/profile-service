@@ -15,11 +15,7 @@ db.exec(`
 `);
 
 db.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS profiles_search USING FTS5(
-        name,
-        description,
-        content='profiles'
-    );
+    CREATE INDEX IF NOT EXISTS idx_profiles_CID ON profiles (CID);
 `);
 
 export default db;

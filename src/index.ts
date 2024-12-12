@@ -138,11 +138,26 @@ import('kubo-rpc-client').then(kubo => {
     });
 
     app.get('/search', (req, res) => {
-        const query = req.query.query as string;
-        if (!query) return res.status(400).json({ error: 'Query parameter is required' });
+        const { name, description, address, CID } = req.query;
 
-        const results = ProfileRepo.searchProfiles(query);
-        res.json(results);
+        if (!name && !description && !address && !CID) {
+            return res.status(400).json({ error: 'At least one search parameter is required' });
+        }
+
+        try {
+            // Pass query parameters to the repository
+            const results = ProfileRepo.searchProfiles({
+                name: name as string || undefined,
+                description: description as string || undefined,
+                address: address as string || undefined,
+                CID: CID as string || undefined,
+            });
+
+            res.json(results);
+        } catch (error) {
+            console.error('Error searching profiles:', error);
+            res.status(500).json({ error: 'Internal Server Error' });
+        }
     });
 
     app.listen(config.port, () => {

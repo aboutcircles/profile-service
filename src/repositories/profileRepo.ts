@@ -21,21 +21,22 @@ class ProfileRepository {
         description = excluded.description;
     `);
 
-  private updateSearchIndexStmt = db.prepare(`
-        INSERT INTO profiles_search (rowid, name, description)
-        SELECT rowid, @name, @description FROM profiles WHERE address = @address;
-    `);
-
   private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
         SELECT MAX(lastUpdatedAt) AS lastProcessed FROM profiles;
     `);
 
-  private searchProfilesStmt = db.prepare(`
-        SELECT name, description FROM profiles_search WHERE profiles_search MATCH ?;
-    `);
-
   private deleteOlderThanBlockStmt = db.prepare(`
         DELETE FROM profiles WHERE lastUpdatedAt < ?;
+    `);
+
+  private searchProfilesStmt = db.prepare(`
+        SELECT address, name, description, CID, lastUpdatedAt
+        FROM profiles
+        WHERE 
+            (@name IS NULL OR name LIKE '%' || @name || '%') AND
+            (@description IS NULL OR description LIKE '%' || @description || '%') AND
+            (@address IS NULL OR address = @address) AND
+            (@CID IS NULL OR CID = @CID)
     `);
 
   getLastProcessedBlock(): number {
@@ -44,15 +45,14 @@ class ProfileRepository {
 
   upsertProfile(profile: Profile): void {
     this.insertOrUpdateProfileStmt.run(profile);
-    this.updateSearchIndexStmt.run(profile);
-  }
-
-  searchProfiles(query: string): Profile[] {
-    return this.searchProfilesStmt.all(query) as Profile[];
   }
 
   deleteDataOlderThanBlock(blockNumber: number): void {
     this.deleteOlderThanBlockStmt.run(blockNumber);
+  }
+
+  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string }): any[] {
+    return this.searchProfilesStmt.all(filters);
   }
 }
 
