@@ -3,9 +3,12 @@
   "version": "0.1.4",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npx tsc"
+    "build": "npx tsc",
+    "dev": "npx nodemon ./src/index.ts",
+    "docker": "docker build -t profile-service . && docker run -p 3000:3000 profile-service"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/body-parser": "^1.19.5",
     "@types/connect-timeout": "^0.0.39",
     "@types/cors": "^2.8.17",
@@ -16,13 +19,19 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
+    "@circles-sdk/data": "^0.15.0-preview1",
+    "axios": "^1.7.9",
+    "better-sqlite3": "^11.6.0",
     "body-parser": "^1.20.2",
     "connect-timeout": "^1.9.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.19.2",
-    "kubo-rpc-client": "4.1.1",
+    "kubo-rpc-client": "^5.0.2",
     "lru-cache": "^11.0.0",
+    "multihashes": "^4.0.3",
     "sharp": "^0.33.4",
+    "viem": "^2.21.54",
     "winston": "^3.13.1"
   }
 }

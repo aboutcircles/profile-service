@@ -1,0 +1,59 @@
+import type { Statement } from 'better-sqlite3';
+
+import db from '../database/db';
+
+export interface Profile {
+  address: string;
+  CID: string;
+  lastUpdatedAt: number;
+  name: string;
+  description: string;
+}
+
+class ProfileRepository {
+  private insertOrUpdateProfileStmt = db.prepare(`
+        INSERT INTO profiles (address, CID, lastUpdatedAt, name, description)
+        VALUES (@address, @CID, @lastUpdatedAt, @name, @description)
+        ON CONFLICT(address) DO UPDATE SET 
+        CID = excluded.CID,
+        lastUpdatedAt = excluded.lastUpdatedAt,
+        name = excluded.name,
+        description = excluded.description;
+    `);
+
+  private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
+        SELECT MAX(lastUpdatedAt) AS lastProcessed FROM profiles;
+    `);
+
+  private deleteOlderThanBlockStmt = db.prepare(`
+        DELETE FROM profiles WHERE lastUpdatedAt < ?;
+    `);
+
+  private searchProfilesStmt = db.prepare(`
+        SELECT address, name, description, CID, lastUpdatedAt
+        FROM profiles
+        WHERE 
+            (@name IS NULL OR name LIKE '%' || @name || '%') AND
+            (@description IS NULL OR description LIKE '%' || @description || '%') AND
+            (@address IS NULL OR address = @address) AND
+            (@CID IS NULL OR CID = @CID)
+    `);
+
+  getLastProcessedBlock(): number {
+    return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
+  }
+
+  upsertProfile(profile: Profile): void {
+    this.insertOrUpdateProfileStmt.run(profile);
+  }
+
+  deleteDataOlderThanBlock(blockNumber: number): void {
+    this.deleteOlderThanBlockStmt.run(blockNumber);
+  }
+
+  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string }): any[] {
+    return this.searchProfilesStmt.all(filters);
+  }
+}
+
+export default new ProfileRepository();
