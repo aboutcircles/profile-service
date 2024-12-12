@@ -1,24 +1,34 @@
 import axios from 'axios';
+import { createPublicClient, http } from 'viem';
+import { gnosis } from 'viem/chains';
 
 import config from '../config/config';
 import ProfileRepo, { Profile } from '../repositories/profileRepo';
 import EventQueue from '../queue/eventQueue';
 import { uint8ArrayToCidV0 } from '../utils/converters';
-import { logError, logInfo } from '../utils/logger';
+import { logError, logInfo, logWarn } from '../utils/logger';
 
 import KuboService from './kuboService';
 
 /* todo:
-- check for reorgs
+- check search endpoint
  */
 
 class IndexerService {
   private circlesData: any;
   private eventQueue = new EventQueue<any>();
-  private initialization = false;
+  private initialization = true;
+
+  // reorg handling
+  private lastBlockHash: string | null = null;
+  private lastBlockNumber: number | null = null;
+  private reorgDepth = 12; // Number of blocks to handle during reorg
+  private client = createPublicClient({
+    chain: gnosis,
+    transport: http(),
+  });
 
   async initialize(): Promise<void> {
-    this.initialization = true;
     const { CirclesRpc, CirclesData } = await import('@circles-sdk/data');
 
     const circlesRpc = new CirclesRpc(config.rpcEndpoint);
@@ -29,9 +39,15 @@ class IndexerService {
 
     // subscribe to events before awaiting catchUpOnMissedEvents for accumulating new events to queue
     this.startWebSocketSubscription();
-    await this.catchUpOnMissedEvents(lastProcessedBlock, latestBlock);
-    await this.eventQueue.process(this.processEvent);
+    this.handleCatchingUpWithBufferedEvents(lastProcessedBlock, latestBlock);
 
+    this.reorgListening();
+  }
+
+  private async handleCatchingUpWithBufferedEvents(fromBlock: number, toBlock: number): Promise<void> {
+    this.initialization = true;
+    await this.catchUpOnMissedEvents(fromBlock, toBlock);
+    await this.eventQueue.process(this.processEvent);
     this.initialization = false;
   }
 
@@ -96,6 +112,44 @@ class IndexerService {
         }
       }
     });
+  }
+
+  // reorg handling
+  private reorgListening(): void {
+    this.client.watchBlocks({
+      onBlock: async (block) => {
+        const blockNumber = Number(block.number);
+        const blockHash = block.hash;
+        const parentHash = block.parentHash;
+
+        logInfo(`New block: ${blockNumber}, hash: ${blockHash}, parentHash: ${parentHash}`);
+        // Check for reorg
+        if (this.lastBlockHash && parentHash !== this.lastBlockHash) {
+          logWarn('Reorg detected! Re-indexing recent blocks...');
+          // not waiting until finish on purpose
+          this.handleReorg(blockNumber);
+        }
+
+        // Update last block state
+        this.lastBlockHash = blockHash;
+        this.lastBlockNumber = blockNumber;
+      },
+      onError: (error) => {
+        logError('Error watching blocks:', error);
+      },
+    });
+  }
+
+  private async handleReorg(currentBlockNumber: number): Promise<void> {
+    const startBlock = Math.max(currentBlockNumber - this.reorgDepth, 0);
+
+    logInfo(`Handling reorg: Deleting data older than block ${startBlock}`);
+
+    // Delete all records older than currentBlockNumber - 12
+    ProfileRepo.deleteDataOlderThanBlock(startBlock);
+
+    // Re-index blocks from startBlock
+    this.handleCatchingUpWithBufferedEvents(startBlock, currentBlockNumber);
   }
 }
 

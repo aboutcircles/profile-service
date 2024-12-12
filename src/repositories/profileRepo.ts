@@ -34,6 +34,10 @@ class ProfileRepository {
         SELECT name, description FROM profiles_search WHERE profiles_search MATCH ?;
     `);
 
+  private deleteOlderThanBlockStmt = db.prepare(`
+        DELETE FROM profiles WHERE lastUpdatedAt < ?;
+    `);
+
   getLastProcessedBlock(): number {
     return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
   }
@@ -45,6 +49,10 @@ class ProfileRepository {
 
   searchProfiles(query: string): Profile[] {
     return this.searchProfilesStmt.all(query) as Profile[];
+  }
+
+  deleteDataOlderThanBlock(blockNumber: number): void {
+    this.deleteOlderThanBlockStmt.run(blockNumber);
   }
 }
 
