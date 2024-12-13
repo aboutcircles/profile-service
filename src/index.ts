@@ -8,35 +8,31 @@ import {get} from "./httpApi/get/get";
 import {getBatch} from "./httpApi/get/getBatch";
 import {getConfig} from "./config";
 
-import('kubo-rpc-client').then(kubo => {
-    const app = express();
-    const port = process.env.PINNING_SERVICE_PORT || 3000;
+const app = express();
+const port = process.env.PINNING_SERVICE_PORT || 3000;
 
-    const config = getConfig();
-    const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
+const config = getConfig();
+const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
 
-    const ipfs = kubo.create(config.ipfs);
+app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
+app.use(bodyParser.json({limit: `${maxProfileSize / 1024}kb`}));
+app.use(timeout(`${config.defaultTimeout}ms`));
 
-    app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
-    app.use(bodyParser.json({limit: `${maxProfileSize / 1024}kb`}));
-    app.use(timeout(`${config.defaultTimeout}ms`));
+const haltOnTimedout = (req: Request, res: Response, next: () => void) => {
+    if (!req.timedout) next();
+};
 
-    const haltOnTimedout = (req: Request, res: Response, next: () => void) => {
-        if (!req.timedout) next();
-    };
+app.get('/health', haltOnTimedout, health());
+app.get('/getBatch', haltOnTimedout, getBatch());
+app.get('/get', haltOnTimedout, get());
 
-    app.get('/health', haltOnTimedout, health(ipfs));
-    app.get('/getBatch', haltOnTimedout, getBatch(ipfs));
-    app.get('/get', haltOnTimedout, get(ipfs));
+app.post('/pin', haltOnTimedout, pin());
 
-    app.post('/pin', haltOnTimedout, pin(ipfs));
+app.listen(port, () => {
+    console.log(`Server is running at http://localhost:${port}`);
+});
 
-    app.listen(port, () => {
-        console.log(`Server is running at http://localhost:${port}`);
-    });
-
-    process.on('SIGINT', () => {
-        console.log('Shutting down...');
-        process.exit(0);
-    });
+process.on('SIGINT', () => {
+    console.log('Shutting down...');
+    process.exit(0);
 });

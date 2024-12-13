@@ -1,7 +1,13 @@
+export type IPFSConfig = {
+    host: string;
+    port: string | number;
+    protocol: string;
+}
+
 export type Config = {
     maxNameLength: number;
     defaultTimeout: number;
-    ipfs: { protocol: string; port: string | number; host: string };
+    ipfs: IPFSConfig;
     maxBatchSize: number;
     imageDimension: number;
     maxImageSizeKB: number;

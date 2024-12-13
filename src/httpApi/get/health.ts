@@ -1,8 +1,16 @@
 import {Request, Response} from "express";
+import {getConfig, IPFSConfig} from "../../config";
 
-export const health = (ipfs: any) => async (req: Request, res: Response) => {
-    if (req.timedout) return;
+export const health = () => async (req: Request, res: Response) => {
+    if (req.timedout) {
+        return;
+    }
     console.log('Health check initiated');
+
+    const config = getConfig();
+    const kubo = await import("kubo-rpc-client");
+    const ipfs = kubo.create(config.ipfs);
+    
     try {
         await ipfs.id();
         if (req.timedout) return;

@@ -2,9 +2,9 @@ import {Request, Response} from "express";
 import {getCachedProfile} from "../getCachedProfile";
 import {isValidCid} from "../isValidCid";
 import {isBlackListed} from "../cidBlacklist";
-import {getConfig} from "../../config";
+import {getConfig, IPFSConfig} from "../../config";
 
-export const get = (ipfs: any) => async (req: Request, res: Response) => {
+export const get = () => async (req: Request, res: Response) => {
     if (req.timedout) return;
 
     if (!isValidCid(<any>req.query.cid)) {
@@ -17,6 +17,8 @@ export const get = (ipfs: any) => async (req: Request, res: Response) => {
     console.log(`Received request for profile with CID: ${req.query.cid}`);
 
     const config = getConfig();
+    const kubo = await import("kubo-rpc-client");
+    const ipfs = kubo.create(config.ipfs);
     try {
         const profile = await getCachedProfile(config, ipfs, req.query.cid as string, config.defaultTimeout - 30);
         if (req.timedout) return;

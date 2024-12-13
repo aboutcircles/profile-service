@@ -4,8 +4,10 @@ import {isBlackListed} from "../cidBlacklist";
 import {getCachedProfile} from "../getCachedProfile";
 import {getConfig} from "../../config";
 
-export const getBatch = (ipfs: any) => async (req: Request, res: Response) => {
-    if (req.timedout) return;
+export const getBatch = () => async (req: Request, res: Response) => {
+    if (req.timedout) {
+        return;
+    }
 
     const {cids} = req.query;
     const cidArray = typeof cids === 'string' ? cids.split(',') : [];
@@ -15,6 +17,9 @@ export const getBatch = (ipfs: any) => async (req: Request, res: Response) => {
     }
 
     const config = getConfig();
+    const kubo = await import("kubo-rpc-client");
+    const ipfs = kubo.create(config.ipfs);
+
     if (cidArray.length > config.maxBatchSize) {
         return res.status(400).json({error: `Maximum batch size is ${config.maxBatchSize}`});
     }
