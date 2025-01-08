@@ -105,24 +105,38 @@ Custom data can be added by users or applications, signed with their respective 
 
 ### 3. **Signing Key Management and Verification**
 
-#### **Signing Key History**
+When adding or updating custom data, the signature of the entire link is verified using the appropriate public key from the `signingKeys` history. Each key is stored with its `validFrom`, `validTo`, and `revokedAt` fields. Expired or revoked keys must no longer be used for verification.
 
-The `signingKeys` field in the profile maintains a history of public keys used for signature verification. Each key is stored along with its:
-- `validFrom`: The timestamp when the key became active.
-- `validTo`: The timestamp when the key expired, if applicable.
-- `revokedAt`: The timestamp when the key was revoked, if applicable.
+---
 
-When adding or updating custom data, the signature of the entire link is verified using the appropriate public key from this history.
+#### **On-Chain Key Ownership Verification**
+
+To ensure that a user (or application) actually controls the private key for a given `keyFingerprint`, an on-chain challenge/response flow must be used:
+
+1. **Nonce Storage**: A smart contract stores a nonce per user (e.g., in a mapping of `address => uint256`).
+2. **Hash Generation**: A user fetches their current nonce from the contract and locally constructs a hash to sign. This hash includes:
+    - The user’s address
+    - The `keyFingerprint`
+    - The user’s current nonce
+    - The contract address and chain ID for domain separation
+3. **Signature**: The user signs the hash off-chain with their private key.
+4. **Verification Function**: The user calls an on-chain function (e.g., `verifyKeyOwnership(keyFingerprint, signature)`) that:
+    - Recomputes the hash
+    - Uses `ecrecover` to retrieve the signer’s address
+    - Confirms the signer matches the caller (`msg.sender`)
+    - Marks `keyFingerprint` as verified for that user address
+    - Increments the nonce to prevent replay
+
+---
 
 #### **Signature Verification**
 
-The SDK must verify signatures as follows:
+1. **Retrieve Public Key**: Retrieve the correct public key from the `signingKeys` section based on the `keyFingerprint`.
+2. **Check Validity**: Ensure the key was valid (not expired or revoked) at the time the link was signed.
+3. **Verify Signature**: Confirm the signature covers all fields in the custom data link (`name`, `cid`, `encrypted`, `encryptionKeyFingerprint`). If the key has been verified on-chain, the SDK **must** check the contract to confirm the `keyFingerprint` was indeed validated for the signing address. If this on-chain validation fails, the custom data link is rejected.
 
-1. **Retrieve Public Key**: Retrieve the public key from the `signingKeys` section based on the `keyFingerprint` of the signature.
-2. **Check Validity**: Ensure the key was valid (not expired or revoked) at the time the data was signed.
-3. **Verify Signature**: Verify the signature using the matching public key and ensure that it covers all fields in the link (`name`, `cid`, `encrypted`, and `encryptionKeyFingerprint`).
 
-If the signature cannot be verified, the custom data link is rejected.
+If the signature or key validity checks fail, the custom data link is rejected.
 
 ---
 
