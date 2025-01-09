@@ -26,7 +26,7 @@ class ProfileRepository {
     `);
 
   private deleteOlderThanBlockStmt = db.prepare(`
-        DELETE FROM profiles WHERE lastUpdatedAt < ?;
+        DELETE FROM profiles WHERE lastUpdatedAt >= ?;
     `);
 
   private searchProfilesStmt = db.prepare(`

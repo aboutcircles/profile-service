@@ -22,7 +22,7 @@ class KuboService {
     logInfo('Initializing KuboService');
     const kubo = await import('kubo-rpc-client');
 
-    this.ipfs = kubo.create(config.ipfsGateway);
+    this.ipfs = kubo.create(config.ipfs);
   }
 
   addToBlackList = (cid: string) => {
