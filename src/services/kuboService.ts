@@ -1,11 +1,10 @@
-import axios from 'axios';
 import sharp from 'sharp';
 import {LRUCache} from 'lru-cache';
 import { logError, logInfo } from '../utils/logger';
 
 import config from '../config/config';
 
-// const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
+const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
 
 class KuboService {
   ipfs: any;
@@ -86,42 +85,34 @@ class KuboService {
   fetchProfile = async (cid: string, timeoutInMs: number): Promise<any> => {
     logInfo(`Fetching profile for CID: ${cid}`);
 
-    let profile;
-    try {
-      const ipfsResponse = await axios.get(`${config.ipfsGateway}/get?cid=${cid}&timeout=${timeoutInMs}`);
-      profile = ipfsResponse.data;
-    } catch (error) {
-      this.addToBlackList(cid);
-      // @ts-ignore
-      logError('Failed to fetch profile', error?.request?.res?.statusMessage ?? error);
-      return;
+      if (this.isBlackListed(cid)) {
+          throw new Error(`The CID ${cid} is blacklisted because it failed validation previously`);
     }
 
-    // let data = Buffer.alloc(0);
-    // try {
-    //   const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {timeout: timeoutInMs});
-    //
-    //   for await (const chunk of stream) {
-    //     if (data.length + chunk.length > maxProfileSize) {
-    //       this.addToBlackList(cid);
-    //       throw new Error(`Response size exceeds ${maxProfileSize} byte limit`);
-    //     }
-    //     data = Buffer.concat([data, chunk]);
-    //   }
-    // } catch (error) {
-    //   // this.addToBlackList(cid);
-    //   logError('Failed to fetch profile', error);
-    //   // throw new Error('Failed to fetch profile');
-    //   return;
-    // }
-    //
-    // let profile;
-    // try {
-    //   profile = JSON.parse(data.toString('utf-8'));
-    // } catch (error) {
-    //   this.addToBlackList(cid);
-    //   throw new Error('Invalid JSON data');
-    // }
+    let data = Buffer.alloc(0);
+    try {
+        const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {timeout: timeoutInMs});
+
+        for await (const chunk of stream) {
+            if (data.length + chunk.length > maxProfileSize) {
+                this.addToBlackList(cid);
+                throw new Error(`Response size exceeds ${maxProfileSize} byte limit`);
+            }
+            data = Buffer.concat([data, chunk]);
+        }
+    } catch (error) {
+        // this.addToBlackList(cid);
+        logError('Failed to fetch profile', error);
+        throw new Error('Failed to fetch profile');
+    }
+
+    let profile;
+    try {
+        profile = JSON.parse(data.toString('utf-8'));
+    } catch (error) {
+        this.addToBlackList(cid);
+        throw new Error('Invalid JSON data');
+    }
 
     const errors = await this.validateProfile(profile);
     if (errors.length) {
