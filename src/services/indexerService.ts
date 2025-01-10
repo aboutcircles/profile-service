@@ -1,12 +1,12 @@
 import axios from 'axios';
-import { createPublicClient, http } from 'viem';
-import { gnosis } from 'viem/chains';
+import {createPublicClient, http} from 'viem';
+import {gnosis} from 'viem/chains';
 
 import config from '../config/config';
-import ProfileRepo, { Profile } from '../repositories/profileRepo';
+import ProfileRepo, {Profile} from '../repositories/profileRepo';
 import EventQueue from '../queue/eventQueue';
-import { uint8ArrayToCidV0 } from '../utils/converters';
-import { logError, logInfo, logWarn } from '../utils/logger';
+import {uint8ArrayToCidV0} from '../utils/converters';
+import {logError, logInfo, logWarn} from '../utils/logger';
 
 import KuboService from './kuboService';
 
@@ -99,19 +99,66 @@ class IndexerService {
   }
 
   private async startWebSocketSubscription(): Promise<void> {
-    const events = await this.circlesData.subscribeToEvents();
-
-    events.subscribe((event: any) => {
-      logInfo('Event received: ', event.$event);
-
-      if (event.$event === 'CrcV2_UpdateMetadataDigest') {
-        if (this.initialization) {
-          this.eventQueue.enqueue(event);
-        } else {
-          this.processEvent(event);
+        if (!this.circlesData) {
+            // In case initialize() hasn't run yet or something else is off
+            return;
         }
-      }
-    });
+
+        // The subscribeToEvents() is presumably returning some RxJS Observable
+        const eventsObservable = await this.circlesData.subscribeToEvents();
+
+        eventsObservable.subscribe(
+            (event: any) => {
+                logInfo('Event received: ', event.$event);
+                if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+                    if (this.initialization) {
+                        // If we're still “catching up” from missed blocks
+                        this.eventQueue.enqueue(event);
+                    } else {
+                        this.processEvent(event).catch((error) => {
+                            logError('Failed to process event:', error);
+                        });
+                    }
+                }
+            },
+            // onError callback
+            (error: any) => {
+                logError('Websocket subscription error:', error);
+                this.handleSubscriptionError();
+            },
+            // onComplete callback (stream closed)
+            () => {
+                logWarn('Websocket subscription closed.');
+                this.handleSubscriptionError();
+            }
+        );
+    }
+
+    /**
+     * Attempts to handle subscription errors by retrying after some delay,
+     * then re-subscribing, and finally re-catching up on missed events.
+     */
+    private async handleSubscriptionError(): Promise<void> {
+        // Optionally track the last processed block:
+        const lastProcessedBlock = ProfileRepo.getLastProcessedBlock();
+        logWarn('Attempting to restore WebSocket subscription in 5 seconds...');
+
+        setTimeout(async () => {
+            try {
+                logInfo('Re-initializing circlesData subscription...');
+                // Start a fresh subscription
+                await this.startWebSocketSubscription();
+
+                // Re-catch any missed events from last known block to current
+                const latestBlock = await this.fetchLatestBlock();
+                await this.handleCatchingUpWithBufferedEvents(lastProcessedBlock, latestBlock);
+
+                logInfo('WebSocket subscription has been restored, missed events re-processed.');
+            } catch (err) {
+                logError('Failed to re-initialize subscription:', err);
+                // Could optionally do another setTimeout() or use an exponential backoff
+            }
+        }, 5_000);
   }
 
   // reorg handling
