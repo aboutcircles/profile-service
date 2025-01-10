@@ -4,8 +4,6 @@ import { logError, logInfo } from '../utils/logger';
 
 import config from '../config/config';
 
-const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
-
 class KuboService {
   ipfs: any;
   profileCache = new LRUCache<string, any>({max: config.cacheMaxSize});
@@ -94,9 +92,9 @@ class KuboService {
         const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {timeout: timeoutInMs});
 
         for await (const chunk of stream) {
-            if (data.length + chunk.length > maxProfileSize) {
+            if (data.length + chunk.length > config.maxProfileSize) {
                 this.addToBlackList(cid);
-                throw new Error(`Response size exceeds ${maxProfileSize} byte limit`);
+                throw new Error(`Response size exceeds ${config.maxProfileSize} byte limit`);
             }
             data = Buffer.concat([data, chunk]);
         }

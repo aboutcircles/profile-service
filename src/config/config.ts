@@ -5,7 +5,7 @@ const config = {
   port: process.env.PORT || 3000,
   rpcEndpoint: process.env.RPC_ENDPOINT || 'https://rpc.aboutcircles.com/',
   wsEndpoint: process.env.WS_ENDPOINT || 'wss://rpc.aboutcircles.com/ws/',
-  databasePath: process.env.DATABASE_PATH || './data/profiles.db',
+  databasePath: process.env.DATABASE_PATH,
 
   ipfs: {
     host: process.env.IPFS_HOST || 'localhost',
@@ -21,7 +21,14 @@ const config = {
   defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
   maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
   maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
-  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200') // New configurable max size for the cache
+  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200'), // New configurable max size for the cache
+  maxProfileSize: 0
 };
+
+config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
+
+if (!config.databasePath) {
+  throw new Error('DATABASE_PATH is required');
+}
 
 export default config;

@@ -13,10 +13,8 @@ import { logError, logInfo } from './utils/logger';
 import('kubo-rpc-client').then(kubo => {
     const app = express();
 
-    const maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
-
     app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
-    app.use(bodyParser.json({limit: `${maxProfileSize / 1024}kb`}));
+    app.use(bodyParser.json({limit: `${config.maxProfileSize / 1024}kb`}));
     app.use(timeout(`${config.defaultTimeout}ms`));
 
     app.use(errorHandler);
