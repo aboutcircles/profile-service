@@ -21,7 +21,6 @@ class IndexerService {
 
   // reorg handling
   private lastBlockHash: string | null = null;
-  private lastBlockNumber: number | null = null;
   private reorgDepth = 12; // Number of blocks to handle during reorg
   private client = createPublicClient({
     chain: gnosis,
@@ -29,7 +28,7 @@ class IndexerService {
   });
 
   async initialize(): Promise<void> {
-    const { CirclesRpc, CirclesData } = await import('@circles-sdk/data');
+    const {CirclesRpc, CirclesData} = await import('@circles-sdk/data');
 
     const circlesRpc = new CirclesRpc(config.rpcEndpoint);
     this.circlesData = new CirclesData(circlesRpc);
@@ -76,7 +75,7 @@ class IndexerService {
   private async processEvent(event: any): Promise<void> {
     logInfo(`Processing event from tx: ${event.transactionHash}, blockNumber: ${event.blockNumber}`);
 
-    const { avatar, metadataDigest, blockNumber } = event;
+    const {avatar, metadataDigest, blockNumber} = event;
     // remove 0x prefix
     const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
     const profileData = await KuboService.getCachedProfile(CID, config.defaultTimeout / 2);
@@ -99,66 +98,19 @@ class IndexerService {
   }
 
   private async startWebSocketSubscription(): Promise<void> {
-        if (!this.circlesData) {
-            // In case initialize() hasn't run yet or something else is off
-            return;
+    const events = await this.circlesData.subscribeToEvents();
+
+    events.subscribe((event: any) => {
+      logInfo('Event received: ', event.$event);
+
+      if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+        if (this.initialization) {
+          this.eventQueue.enqueue(event);
+        } else {
+          this.processEvent(event);
         }
-
-        // The subscribeToEvents() is presumably returning some RxJS Observable
-        const eventsObservable = await this.circlesData.subscribeToEvents();
-
-        eventsObservable.subscribe(
-            (event: any) => {
-                logInfo('Event received: ', event.$event);
-                if (event.$event === 'CrcV2_UpdateMetadataDigest') {
-                    if (this.initialization) {
-                        // If we're still “catching up” from missed blocks
-                        this.eventQueue.enqueue(event);
-                    } else {
-                        this.processEvent(event).catch((error) => {
-                            logError('Failed to process event:', error);
-                        });
-                    }
-                }
-            },
-            // onError callback
-            (error: any) => {
-                logError('Websocket subscription error:', error);
-                this.handleSubscriptionError();
-            },
-            // onComplete callback (stream closed)
-            () => {
-                logWarn('Websocket subscription closed.');
-                this.handleSubscriptionError();
-            }
-        );
-    }
-
-    /**
-     * Attempts to handle subscription errors by retrying after some delay,
-     * then re-subscribing, and finally re-catching up on missed events.
-     */
-    private async handleSubscriptionError(): Promise<void> {
-        // Optionally track the last processed block:
-        const lastProcessedBlock = ProfileRepo.getLastProcessedBlock();
-        logWarn('Attempting to restore WebSocket subscription in 5 seconds...');
-
-        setTimeout(async () => {
-            try {
-                logInfo('Re-initializing circlesData subscription...');
-                // Start a fresh subscription
-                await this.startWebSocketSubscription();
-
-                // Re-catch any missed events from last known block to current
-                const latestBlock = await this.fetchLatestBlock();
-                await this.handleCatchingUpWithBufferedEvents(lastProcessedBlock, latestBlock);
-
-                logInfo('WebSocket subscription has been restored, missed events re-processed.');
-            } catch (err) {
-                logError('Failed to re-initialize subscription:', err);
-                // Could optionally do another setTimeout() or use an exponential backoff
-            }
-        }, 5_000);
+      }
+    });
   }
 
   // reorg handling
@@ -179,7 +131,6 @@ class IndexerService {
 
         // Update last block state
         this.lastBlockHash = blockHash;
-        this.lastBlockNumber = blockNumber;
       },
       onError: (error) => {
         logError('Error watching blocks:', error);
