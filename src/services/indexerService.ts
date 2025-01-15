@@ -68,7 +68,11 @@ class IndexerService {
     logInfo('Catching up on missed events: ', events.length);
 
     for (const event of events) {
-      await this.processEvent(event);
+      try {
+        await this.processEvent(event);
+      } catch (e) {
+        console.error(`Couldn't process event:`, e);
+      }
     }
   }
 
