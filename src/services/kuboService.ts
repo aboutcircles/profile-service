@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import {LRUCache} from 'lru-cache';
 import { logError, logInfo } from '../utils/logger';
-
+import { sanitizeProfile, SanitizedProfile } from '../utils/sanitizer';
 import config from '../config/config';
 
 class KuboService {
@@ -55,29 +55,33 @@ class KuboService {
     }
   };
 
-  validateProfile = async (profile: any) => {
-    const errors = [];
+  validateProfile = async (profile: any): Promise<{ errors: string[]; sanitizedProfile?: SanitizedProfile }> => {
+    const sanitizedProfile = sanitizeProfile(profile);
+    const errors: string[] = [];
 
-    if (!profile.name || typeof profile.name !== 'string' || profile.name.length > config.maxNameLength) {
+    if (!sanitizedProfile.name || sanitizedProfile.name.length > config.maxNameLength) {
       errors.push(`Name is required and must be a string with a maximum length of ${config.maxNameLength} characters.`);
     }
 
-    if (profile.description && (typeof profile.description !== 'string' || profile.description.length > config.descriptionLength)) {
+    if (sanitizedProfile.description && sanitizedProfile.description.length > config.descriptionLength) {
       errors.push(`Description must be a string and cannot exceed ${config.descriptionLength} characters.`);
     }
 
-    if (profile.previewImageUrl) {
-      const isValidImage = await this.validateImage(profile.previewImageUrl);
+    if (sanitizedProfile.previewImageUrl) {
+      const isValidImage = await this.validateImage(sanitizedProfile.previewImageUrl);
       if (!isValidImage) {
         errors.push(`Invalid preview image data URL, dimensions not ${config.imageDimension}x${config.imageDimension}, or size exceeds ${config.maxImageSizeKB}KB.`);
       }
     }
 
-    if (profile.imageUrl && (typeof profile.imageUrl !== 'string' || profile.imageUrl.length > config.imageUrlLength)) {
+    if (sanitizedProfile.imageUrl && sanitizedProfile.imageUrl.length > config.imageUrlLength) {
       errors.push(`Image URL must be a string and cannot exceed ${config.imageUrlLength} characters.`);
     }
 
-    return errors;
+    return {
+      errors,
+      sanitizedProfile: errors.length === 0 ? sanitizedProfile : undefined
+    };
   };
 
   fetchProfile = async (cid: string, timeoutInMs: number): Promise<any> => {
@@ -112,12 +116,12 @@ class KuboService {
         throw new Error('Invalid JSON data');
     }
 
-    const errors = await this.validateProfile(profile);
-    if (errors.length) {
+    const validation = await this.validateProfile(profile);
+    if (validation.errors.length) {
       this.addToBlackList(cid);
-      throw new Error(errors.join(', '));
+      throw new Error(validation.errors.join(', '));
     }
-    return profile;
+    return validation.sanitizedProfile;
   };
 
   getCachedProfile = async (cid: string, timeoutInMs: number): Promise<any> => {

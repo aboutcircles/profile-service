@@ -9,6 +9,7 @@ import IndexerService from './services/indexerService';
 import KuboService from './services/kuboService';
 import { errorHandler } from './utils/errorHandler';
 import { logError, logInfo } from './utils/logger';
+import { sanitizeSearchParams } from './utils/sanitizer';
 
 import('kubo-rpc-client').then(kubo => {
     const app = express();
@@ -103,13 +104,13 @@ import('kubo-rpc-client').then(kubo => {
 
         logInfo('Received profile for pinning:', req.body);
 
-        const errors = await KuboService.validateProfile(req.body);
-        if (errors.length) {
-            return res.status(400).json({errors});
+        const validation = await KuboService.validateProfile(req.body);
+        if (validation.errors.length) {
+            return res.status(400).json({errors: validation.errors});
         }
 
         try {
-            const buffer = Buffer.from(JSON.stringify(req.body));
+            const buffer = Buffer.from(JSON.stringify(validation.sanitizedProfile));
             const result = await KuboService.ipfs.add(buffer);
             await KuboService.ipfs.pin.add(result.cid);
             if (req.timedout) return;
@@ -136,24 +137,33 @@ import('kubo-rpc-client').then(kubo => {
     });
 
     app.get('/search', (req, res) => {
-        const { name, description, address, CID } = req.query;
-
-        if (!name && !description && !address && !CID) {
-            return res.status(400).json({ error: 'At least one search parameter is required' });
-        }
-
         try {
-            // Pass query parameters to the repository
-            const results = ProfileRepo.searchProfiles({
-                name: name as string || undefined,
-                description: description as string || undefined,
-                address: address as string || undefined,
-                CID: CID as string || undefined,
+            const { name, description, address, CID } = req.query;
+
+            if (!name && !description && !address && !CID) {
+                return res.status(400).json({ error: 'At least one search parameter is required' });
+            }
+
+            const sanitizedParams = sanitizeSearchParams({
+                name,
+                description,
+                address,
+                CID
             });
 
-            res.json(results);
+            const results = ProfileRepo.searchProfiles(sanitizedParams);
+
+            const sanitizedResults = results.map(result => ({
+                name: result.name,
+                description: result.description,
+                address: result.address,
+                CID: result.CID,
+                lastUpdatedAt: result.lastUpdatedAt
+            }));
+
+            res.json(sanitizedResults);
         } catch (error) {
-            console.error('Error searching profiles:', error);
+            logError('Error searching profiles:', error);
             res.status(500).json({ error: 'Internal Server Error' });
         }
     });

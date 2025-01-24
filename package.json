@@ -23,6 +23,7 @@
   "description": "",
   "dependencies": {
     "@circles-sdk/data": "^0.15.1",
+    "@types/sqlstring": "^2.3.2",
     "axios": "^1.7.9",
     "better-sqlite3": "^11.6.0",
     "body-parser": "1.20.3",
@@ -30,10 +31,12 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "5.0.0",
+    "isomorphic-dompurify": "^2.20.0",
     "kubo-rpc-client": "^5.0.2",
     "lru-cache": "^11.0.0",
     "multihashes": "^4.0.3",
     "sharp": "^0.33.4",
+    "sqlstring": "^2.3.3",
     "viem": "^2.21.54",
     "winston": "^3.13.1"
   }
