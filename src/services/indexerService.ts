@@ -61,9 +61,7 @@ class IndexerService {
   }
 
   private async catchUpOnMissedEvents(fromBlock: number, toBlock: number): Promise<void> {
-    const response = await this.circlesData.getEvents(null, fromBlock + 1, toBlock, ['CrcV2_UpdateMetadataDigest']);
-    // ascending order
-    const events = response.reverse();
+    const events = await this.circlesData.getEvents(null, fromBlock + 1, toBlock, ['CrcV2_UpdateMetadataDigest'], [], true);
 
     logInfo('Catching up on missed events: ', events.length);
 
