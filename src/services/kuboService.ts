@@ -56,8 +56,15 @@ class KuboService {
   };
 
   validateProfile = async (profile: any): Promise<{ errors: string[]; sanitizedProfile?: SanitizedProfile }> => {
-    const sanitizedProfile = sanitizeProfile(profile);
+    const sanitizeResult = sanitizeProfile(profile);
+    if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
+      return {
+        errors: sanitizeResult.errors
+      };
+    }
+
     const errors: string[] = [];
+    const sanitizedProfile = sanitizeResult.sanitized;
 
     if (!sanitizedProfile.name || sanitizedProfile.name.length > config.maxNameLength) {
       errors.push(`Name is required and must be a string with a maximum length of ${config.maxNameLength} characters.`);
@@ -74,8 +81,19 @@ class KuboService {
       }
     }
 
-    if (sanitizedProfile.imageUrl && sanitizedProfile.imageUrl.length > config.imageUrlLength) {
-      errors.push(`Image URL must be a string and cannot exceed ${config.imageUrlLength} characters.`);
+    if (sanitizedProfile.imageUrl) {
+      if (sanitizedProfile.imageUrl.length > config.imageUrlLength) {
+        errors.push(`Image URL must be a string and cannot exceed ${config.imageUrlLength} characters.`);
+      }
+
+      try {
+        const url = new URL(sanitizedProfile.imageUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          errors.push('Image URL must use HTTP or HTTPS protocol');
+        }
+      } catch {
+        errors.push('Invalid image URL format');
+      }
     }
 
     return {
@@ -87,33 +105,32 @@ class KuboService {
   fetchProfile = async (cid: string, timeoutInMs: number): Promise<any> => {
     logInfo(`Fetching profile for CID: ${cid}`);
 
-      if (this.isBlackListed(cid)) {
-          throw new Error(`The CID ${cid} is blacklisted because it failed validation previously`);
+    if (this.isBlackListed(cid)) {
+      throw new Error(`The CID ${cid} is blacklisted because it failed validation previously`);
     }
 
     let data = Buffer.alloc(0);
     try {
-        const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {timeout: timeoutInMs});
+      const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {timeout: timeoutInMs});
 
-        for await (const chunk of stream) {
-            if (data.length + chunk.length > config.maxProfileSize) {
-                this.addToBlackList(cid);
-                throw new Error(`Response size exceeds ${config.maxProfileSize} byte limit`);
-            }
-            data = Buffer.concat([data, chunk]);
+      for await (const chunk of stream) {
+        if (data.length + chunk.length > config.maxProfileSize) {
+          this.addToBlackList(cid);
+          throw new Error(`Response size exceeds ${config.maxProfileSize} byte limit`);
         }
+        data = Buffer.concat([data, chunk]);
+      }
     } catch (error) {
-        // this.addToBlackList(cid);
-        logError('Failed to fetch profile', error);
-        throw new Error('Failed to fetch profile');
+      logError('Failed to fetch profile', error);
+      throw new Error('Failed to fetch profile');
     }
 
     let profile;
     try {
-        profile = JSON.parse(data.toString('utf-8'));
+      profile = JSON.parse(data.toString('utf-8'));
     } catch (error) {
-        this.addToBlackList(cid);
-        throw new Error('Invalid JSON data');
+      this.addToBlackList(cid);
+      throw new Error('Invalid JSON data');
     }
 
     const validation = await this.validateProfile(profile);

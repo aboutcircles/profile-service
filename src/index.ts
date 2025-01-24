@@ -63,7 +63,7 @@ import('kubo-rpc-client').then(kubo => {
                     return Promise.reject(new Error(`The CID ${cid.cid} is blacklisted because it failed validation previously`));
                 }
             });
-            const profiles = await Promise.all(fetchPromises.map(p => p.catch(e => {
+            const profiles = await Promise.all(fetchPromises.map(p => p.catch((e: Error) => {
                 logError('Failed to fetch profile', e);
                 return null;
             })));
@@ -144,14 +144,21 @@ import('kubo-rpc-client').then(kubo => {
                 return res.status(400).json({ error: 'At least one search parameter is required' });
             }
 
-            const sanitizedParams = sanitizeSearchParams({
+            const sanitizeResult = sanitizeSearchParams({
                 name,
                 description,
                 address,
                 CID
             });
 
-            const results = ProfileRepo.searchProfiles(sanitizedParams);
+            if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
+                return res.status(400).json({ 
+                    error: 'Invalid search parameters',
+                    details: sanitizeResult.errors 
+                });
+            }
+
+            const results = ProfileRepo.searchProfiles(sanitizeResult.sanitized);
 
             const sanitizedResults = results.map(result => ({
                 name: result.name,
