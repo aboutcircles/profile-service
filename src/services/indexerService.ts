@@ -1,6 +1,15 @@
 import axios from 'axios';
-import {createPublicClient, http} from 'viem';
+import {
+  createPublicClient, 
+  http, 
+  getContract,
+  type Address,
+  type Abi
+} from 'viem';
 import {gnosis} from 'viem/chains';
+import NameRegistryAbi from '../abis/NameRegistryAbi.json';
+
+const nameRegistryAbi = NameRegistryAbi as Abi;
 
 import config from '../config/config';
 import ProfileRepo, {Profile} from '../repositories/profileRepo';
@@ -9,10 +18,6 @@ import {uint8ArrayToCidV0} from '../utils/converters';
 import {logError, logInfo, logWarn} from '../utils/logger';
 
 import KuboService from './kuboService';
-
-/* todo:
-- check search endpoint
- */
 
 class IndexerService {
   private circlesData: any;
@@ -25,6 +30,12 @@ class IndexerService {
   private client = createPublicClient({
     chain: gnosis,
     transport: http(),
+  });
+
+  private nameRegistryContract = getContract({
+    address: config.nameRegistryContract as Address,
+    abi: nameRegistryAbi,
+    client: this.client,
   });
 
   async initialize(): Promise<void> {
@@ -88,12 +99,23 @@ class IndexerService {
     }
     logInfo(`Profile proccessed for CID: ${CID}, avatar: ${avatar}, name: ${profileData.name}`);
 
+    // Get registered name from contract
+    let registeredName: string | null = null;
+    try {
+      const result = await this.nameRegistryContract.read.name([avatar as Address]);
+      registeredName = result as string;
+      logInfo(`Retrieved registered name for ${avatar}: ${registeredName}`);
+    } catch (error) {
+      logError(`Failed to fetch registered name for ${avatar}:`, error);
+    }
+
     const profile: Profile = {
       address: avatar,
       CID,
       lastUpdatedAt: blockNumber,
       name: profileData.name,
       description: profileData.description,
+      registeredName,
     };
 
     ProfileRepo.upsertProfile(profile);
