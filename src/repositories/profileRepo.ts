@@ -38,7 +38,8 @@ class ProfileRepository {
             (@name IS NULL OR name LIKE '%' || @name || '%') AND
             (@description IS NULL OR description LIKE '%' || @description || '%') AND
             (@address IS NULL OR address = @address) AND
-            (@CID IS NULL OR CID = @CID)
+            (@CID IS NULL OR CID = @CID) AND
+            (@registeredName IS NULL OR registeredName = @registeredName)
     `);
 
   getLastProcessedBlock(): number {
