@@ -23,7 +23,8 @@ db.exec(`
         CID TEXT,
         lastUpdatedAt INTEGER,
         name TEXT,
-        description TEXT
+        description TEXT,
+        registeredName TEXT
     );
 `);
 

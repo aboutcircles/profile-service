@@ -16,11 +16,22 @@ class ProfileRepository {
         INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName)
         VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName)
         ON CONFLICT(address) DO UPDATE SET 
-        CID = excluded.CID,
         lastUpdatedAt = excluded.lastUpdatedAt,
-        name = excluded.name,
-        description = excluded.description,
-        registeredName = excluded.registeredName;
+        CID = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
+        name = COALESCE(NULLIF(excluded.name, ''), profiles.name),
+        description = COALESCE(NULLIF(excluded.description, ''), profiles.description),
+        registeredName = COALESCE(excluded.registeredName, profiles.registeredName);
+    `);
+
+  private updateProfileStmt = db.prepare(`
+        UPDATE profiles 
+        SET 
+            lastUpdatedAt = @lastUpdatedAt,
+            CID = COALESCE(NULLIF(@CID, ''), CID),
+            name = COALESCE(NULLIF(@name, ''), name),
+            description = COALESCE(NULLIF(@description, ''), description),
+            registeredName = COALESCE(@registeredName, registeredName)
+        WHERE address = @address;
     `);
 
   private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
@@ -56,6 +67,10 @@ class ProfileRepository {
 
   searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string }): any[] {
     return this.searchProfilesStmt.all(filters);
+  }
+
+  updateProfile(profile: Profile): void {
+    this.updateProfileStmt.run(profile);
   }
 }
 

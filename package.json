@@ -23,10 +23,12 @@
   "description": "",
   "dependencies": {
     "@circles-sdk/data": "^0.15.1",
+    "@types/bs58": "^4.0.4",
     "@types/sqlstring": "^2.3.2",
     "axios": "^1.7.9",
     "better-sqlite3": "^11.6.0",
     "body-parser": "1.20.3",
+    "bs58": "^6.0.0",
     "connect-timeout": "^1.9.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
