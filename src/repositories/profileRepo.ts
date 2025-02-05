@@ -65,7 +65,7 @@ class ProfileRepository {
     this.deleteOlderThanBlockStmt.run(blockNumber);
   }
 
-  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string }): any[] {
+  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string, registeredName?: string }): any[] {
     return this.searchProfilesStmt.all(filters);
   }
 
