@@ -138,9 +138,9 @@ import('kubo-rpc-client').then(kubo => {
 
     app.get('/search', (req, res) => {
         try {
-            const { name, description, address, CID } = req.query;
+            const { name, description, address, CID, registeredName } = req.query;
 
-            if (!name && !description && !address && !CID) {
+            if (!name && !description && !address && !CID && !registeredName) {
                 return res.status(400).json({ error: 'At least one search parameter is required' });
             }
 
@@ -148,7 +148,8 @@ import('kubo-rpc-client').then(kubo => {
                 name,
                 description,
                 address,
-                CID
+                CID,
+                registeredName,
             });
 
             if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
@@ -165,7 +166,8 @@ import('kubo-rpc-client').then(kubo => {
                 description: result.description,
                 address: result.address,
                 CID: result.CID,
-                lastUpdatedAt: result.lastUpdatedAt
+                lastUpdatedAt: result.lastUpdatedAt,
+                registeredName: result.registeredName,
             }));
 
             res.json(sanitizedResults);

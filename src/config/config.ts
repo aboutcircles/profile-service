@@ -6,7 +6,6 @@ const config = {
   rpcEndpoint: process.env.RPC_ENDPOINT || 'https://rpc.aboutcircles.com/',
   wsEndpoint: process.env.WS_ENDPOINT || 'wss://rpc.aboutcircles.com/ws/',
   databasePath: process.env.DATABASE_PATH,
-
   ipfs: {
     host: process.env.IPFS_HOST || 'localhost',
     port: process.env.IPFS_PORT || 5001,

@@ -14,11 +14,9 @@ export interface ValidationResult<T> {
     sanitized?: T;
 }
 
-const URL_PATTERN = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
 const DANGEROUS_PATTERNS = [
     /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
     /javascript:/gi,
-    /data:/gi,
     /vbscript:/gi,
     /onclick/gi,
     /onload/gi,
@@ -30,10 +28,6 @@ const DANGEROUS_PATTERNS = [
 
 function containsDangerousContent(input: string): boolean {
     return DANGEROUS_PATTERNS.some(pattern => pattern.test(input));
-}
-
-function isValidUrl(url: string): boolean {
-    return URL_PATTERN.test(url);
 }
 
 // sanitizes a string by removing HTML/JS and SQL injection risks
@@ -70,15 +64,16 @@ export function sanitizeString(input: string | null | undefined): ValidationResu
 // strips unknown properties and sanitizes known properties
 export function sanitizeProfile(input: any): ValidationResult<SanitizedProfile> {
     const errors: string[] = [];
-    const knownProperties = ['name', 'description', 'imageUrl', 'previewImageUrl'];
-    
-    const unknownProps = Object.keys(input).filter(key => !knownProperties.includes(key));
-    if (unknownProps.length > 0) {
-        return {
-            isValid: false,
-            errors: [`Unknown properties detected: ${unknownProps.join(', ')}`]
-        };
-    }
+
+    // no need, cause now we're receiving more props, just ignore them
+    // const knownProperties = ['name', 'description', 'imageUrl', 'previewImageUrl'];
+    // const unknownProps = Object.keys(input).filter(key => !knownProperties.includes(key));
+    // if (unknownProps.length > 0) {
+    //     return {
+    //         isValid: false,
+    //         errors: [`Unknown properties detected: ${unknownProps.join(', ')}`]
+    //     };
+    // }
 
     const nameResult = sanitizeString(input.name);
     if (!nameResult.isValid || !nameResult.sanitized) {
@@ -89,7 +84,7 @@ export function sanitizeProfile(input: any): ValidationResult<SanitizedProfile> 
         name: nameResult.sanitized || '',
     };
 
-    if (input.description !== undefined) {
+    if (input.description !== undefined && input.description !== '' && input.description !== null) {
         const descResult = sanitizeString(input.description);
         if (!descResult.isValid) {
             errors.push('Invalid description: ' + descResult.errors.join(', '));
@@ -97,18 +92,18 @@ export function sanitizeProfile(input: any): ValidationResult<SanitizedProfile> 
         sanitized.description = descResult.sanitized;
     }
 
-    if (input.imageUrl !== undefined) {
+    if (input.imageUrl !== undefined && input.imageUrl !== '' && input.imageUrl !== null) {
         const urlResult = sanitizeString(input.imageUrl);
-        if (!urlResult.isValid || !urlResult.sanitized || !isValidUrl(urlResult.sanitized)) {
-            errors.push('Invalid imageUrl: Must be a valid URL');
+        if (!urlResult.isValid || !urlResult.sanitized) {
+            errors.push('Invalid imageUrl: ' + urlResult.errors.join(', '));
         }
         sanitized.imageUrl = urlResult.sanitized;
     }
 
-    if (input.previewImageUrl !== undefined) {
+    if (input.previewImageUrl !== undefined && input.previewImageUrl !== '' && input.previewImageUrl !== null) {
         const urlResult = sanitizeString(input.previewImageUrl);
-        if (!urlResult.isValid || !urlResult.sanitized || !isValidUrl(urlResult.sanitized)) {
-            errors.push('Invalid previewImageUrl: Must be a valid URL');
+        if (!urlResult.isValid || !urlResult.sanitized) {
+            errors.push('Invalid previewImageUrl: ' + urlResult.errors.join(', '));
         }
         sanitized.previewImageUrl = urlResult.sanitized;
     }

@@ -8,17 +8,30 @@ export interface Profile {
   lastUpdatedAt: number;
   name: string;
   description: string;
+  registeredName: string | null;
 }
 
 class ProfileRepository {
   private insertOrUpdateProfileStmt = db.prepare(`
-        INSERT INTO profiles (address, CID, lastUpdatedAt, name, description)
-        VALUES (@address, @CID, @lastUpdatedAt, @name, @description)
+        INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName)
+        VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName)
         ON CONFLICT(address) DO UPDATE SET 
-        CID = excluded.CID,
         lastUpdatedAt = excluded.lastUpdatedAt,
-        name = excluded.name,
-        description = excluded.description;
+        CID = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
+        name = COALESCE(NULLIF(excluded.name, ''), profiles.name),
+        description = COALESCE(NULLIF(excluded.description, ''), profiles.description),
+        registeredName = COALESCE(excluded.registeredName, profiles.registeredName);
+    `);
+
+  private updateProfileStmt = db.prepare(`
+        UPDATE profiles 
+        SET 
+            lastUpdatedAt = @lastUpdatedAt,
+            CID = COALESCE(NULLIF(@CID, ''), CID),
+            name = COALESCE(NULLIF(@name, ''), name),
+            description = COALESCE(NULLIF(@description, ''), description),
+            registeredName = COALESCE(@registeredName, registeredName)
+        WHERE address = @address;
     `);
 
   private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
@@ -30,13 +43,14 @@ class ProfileRepository {
     `);
 
   private searchProfilesStmt = db.prepare(`
-        SELECT address, name, description, CID, lastUpdatedAt
+        SELECT address, name, description, CID, lastUpdatedAt, registeredName
         FROM profiles
         WHERE 
             (@name IS NULL OR name LIKE '%' || @name || '%') AND
             (@description IS NULL OR description LIKE '%' || @description || '%') AND
             (@address IS NULL OR address = @address) AND
-            (@CID IS NULL OR CID = @CID)
+            (@CID IS NULL OR CID = @CID) AND
+            (@registeredName IS NULL OR registeredName = @registeredName)
     `);
 
   getLastProcessedBlock(): number {
@@ -51,8 +65,12 @@ class ProfileRepository {
     this.deleteOlderThanBlockStmt.run(blockNumber);
   }
 
-  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string }): any[] {
+  searchProfiles(filters: { name?: string; description?: string; address?: string; CID?: string, registeredName?: string }): any[] {
     return this.searchProfilesStmt.all(filters);
+  }
+
+  updateProfile(profile: Profile): void {
+    this.updateProfileStmt.run(profile);
   }
 }
 

@@ -1,6 +1,6 @@
 import axios from 'axios';
-import {createPublicClient, http} from 'viem';
-import {gnosis} from 'viem/chains';
+import { createPublicClient, http } from 'viem';
+import { gnosis } from 'viem/chains';
 
 import config from '../config/config';
 import ProfileRepo, {Profile} from '../repositories/profileRepo';
@@ -10,13 +10,10 @@ import {logError, logInfo, logWarn} from '../utils/logger';
 
 import KuboService from './kuboService';
 
-/* todo:
-- check search endpoint
- */
-
 class IndexerService {
   private circlesData: any;
   private eventQueue = new EventQueue<any>();
+  private nameEventQueue = new EventQueue<any>();
   private initialization = true;
 
   // reorg handling
@@ -45,8 +42,19 @@ class IndexerService {
 
   private async handleCatchingUpWithBufferedEvents(fromBlock: number, toBlock: number): Promise<void> {
     this.initialization = true;
+    logInfo(`Starting catch up from block ${fromBlock} to ${toBlock}`);
+    
     await this.catchUpOnMissedEvents(fromBlock, toBlock);
-    await this.eventQueue.process(this.processEvent);
+    
+    // Process metadata events first to ensure profiles exist
+    logInfo(`Processing ${this.eventQueue.isEmpty() ? 'no' : 'queued'} metadata events...`);
+    await this.eventQueue.process(this.processEvent.bind(this));
+    
+    // Then process name events
+    logInfo(`Processing ${this.nameEventQueue.isEmpty() ? 'no' : 'queued'} name events...`);
+    await this.nameEventQueue.process(this.processRegisteredName.bind(this));
+    
+    logInfo('Catch up completed');
     this.initialization = false;
   }
 
@@ -61,13 +69,37 @@ class IndexerService {
   }
 
   private async catchUpOnMissedEvents(fromBlock: number, toBlock: number): Promise<void> {
-    const events = await this.circlesData.getEvents(null, fromBlock + 1, toBlock, ['CrcV2_UpdateMetadataDigest'], [], true);
+    const events = await this.circlesData.getEvents(
+      null,
+      fromBlock + 1,
+      toBlock,
+      [
+        'CrcV2_UpdateMetadataDigest',
+        'CrcV2_RegisterShortName',
+        'CrcV2_RegisterGroup',
+        'CrcV2_RegisterOrganization'
+      ],
+      [],
+      true
+    );
 
     logInfo('Catching up on missed events: ', events.length);
 
     for (const event of events) {
       try {
-        await this.processEvent(event);
+        if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+          if (this.initialization) {
+            this.eventQueue.enqueue(event);
+          } else {
+            await this.processEvent(event);
+          }
+        } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
+          if (this.initialization) {
+            this.nameEventQueue.enqueue(event);
+          } else {
+            await this.processRegisteredName(event);
+          }
+        }
       } catch (e) {
         console.error(`Couldn't process event:`, e);
       }
@@ -94,9 +126,51 @@ class IndexerService {
       lastUpdatedAt: blockNumber,
       name: profileData.name,
       description: profileData.description,
+      registeredName: null,
     };
 
     ProfileRepo.upsertProfile(profile);
+  }
+
+  private async processRegisteredName(event: any): Promise<void> {
+    const { avatar, blockNumber, organization, group } = event;
+    logInfo(`Processing registered name event: ${event.$event} for ${avatar ?? organization ?? group} at block ${blockNumber}`, ...event);
+    let name: string | null = null;
+
+    switch(event.$event) {
+      case 'CrcV2_RegisterOrganization':
+      case 'CrcV2_RegisterGroup':
+        name = event.name;
+        break;
+      case 'CrcV2_RegisterShortName': {
+        try {
+          // Convert uint72 to bytes then to base58
+          const shortNameBigInt = BigInt(event.shortName);
+          const hex = shortNameBigInt.toString(16).padStart(18, '0'); // 72 bits = 18 hex chars
+          const bytes = Buffer.from(hex, 'hex');
+          const bs58 = await import('bs58');
+          name = bs58.default.encode(bytes);
+          logInfo(`Converted shortName ${event.shortName} to base58: ${name}`);
+        } catch (error) {
+          logError(`Failed to convert shortName to base58: ${error}`);
+          return;
+        }
+        break;
+      }
+    }
+
+    if (name) {
+      const profile: Profile = {
+        address: avatar ?? organization ?? group,
+        CID: '', // Will be updated by UpdateMetadataDigest event
+        lastUpdatedAt: blockNumber,
+        name: '', // Will be updated by UpdateMetadataDigest event
+        description: '', // Will be updated by UpdateMetadataDigest event
+        registeredName: name,
+      };
+      ProfileRepo.updateProfile(profile);
+      logInfo(`Attempted to update registered name for ${avatar ?? organization ?? group}: ${name}`);
+    }
   }
 
   private async startWebSocketSubscription(): Promise<void> {
@@ -110,6 +184,12 @@ class IndexerService {
           this.eventQueue.enqueue(event);
         } else {
           this.processEvent(event);
+        }
+      } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
+        if (this.initialization) {
+          this.nameEventQueue.enqueue(event);
+        } else {
+          this.processRegisteredName(event);
         }
       }
     });
