@@ -1,6 +1,7 @@
 import type { Statement } from 'better-sqlite3';
 
 import db from '../database/db';
+import config from "../config/config";
 
 export interface Profile {
   address: string;
@@ -51,6 +52,7 @@ class ProfileRepository {
             (@address IS NULL OR address = @address) AND
             (@CID IS NULL OR CID = @CID) AND
             (@registeredName IS NULL OR registeredName = @registeredName)
+        LIMIT ${config.maxListSize};
     `);
 
   getLastProcessedBlock(): number {

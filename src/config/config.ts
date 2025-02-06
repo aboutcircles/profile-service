@@ -27,6 +27,7 @@ const config = {
   s3Secret: process.env.S3_SECRET,
   s3Bucket: process.env.S3_BUCKET,
   s3ApiUrl: process.env.S3_API_URL || 'https://s3.filebase.com',
+  maxListSize: parseInt(process.env.MAX_LIST_SIZE || '50'),
   maxProfileSize: 0,
 };
 
