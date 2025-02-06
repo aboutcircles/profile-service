@@ -7,10 +7,9 @@ import ProfileRepo, {Profile} from '../repositories/profileRepo';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logError, logInfo, logWarn} from '../utils/logger';
+import {PersistenceService} from "./persistenceService";
 
-import KuboService from './kuboService';
-
-class IndexerService {
+export class IndexerService {
   private circlesData: any;
   private eventQueue = new EventQueue<any>();
   private nameEventQueue = new EventQueue<any>();
@@ -23,6 +22,8 @@ class IndexerService {
     chain: gnosis,
     transport: http(),
   });
+
+  constructor(private persistenceService: PersistenceService) {}
 
   async initialize(): Promise<void> {
     const {CirclesRpc, CirclesData} = await import('@circles-sdk/data');
@@ -112,7 +113,7 @@ class IndexerService {
     const {avatar, metadataDigest, blockNumber} = event;
     // remove 0x prefix
     const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
-    const profileData = await KuboService.getCachedProfile(CID, config.defaultTimeout / 2);
+    const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout / 2);
 
     if (!profileData) {
       logError(`Failed to fetch profile data for CID: ${CID}`);
@@ -232,5 +233,3 @@ class IndexerService {
     this.handleCatchingUpWithBufferedEvents(startBlock, currentBlockNumber);
   }
 }
-
-export default new IndexerService();

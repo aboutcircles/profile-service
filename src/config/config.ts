@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 const config = {
@@ -20,8 +21,12 @@ const config = {
   defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
   maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
   maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
-  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200'), // New configurable max size for the cache
-  maxProfileSize: 0
+  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200'), // New configurable max size for the cache.ts
+  usePinningApi: process.env.USE_PINNING_API === 'true',
+  pinningApiKey: process.env.PINNING_API_KEY,
+  pinningApiSecret: process.env.PINNING_API_SECRET,
+  pinningApiUrl: process.env.PINNING_API_URL,
+  maxProfileSize: 0,
 };
 
 config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
@@ -29,5 +34,9 @@ config.maxProfileSize = config.descriptionLength + config.imageUrlLength + confi
 if (!config.databasePath) {
   throw new Error('DATABASE_PATH is required');
 }
-
+if (config.usePinningApi) {
+  if (!config.pinningApiKey || !config.pinningApiSecret) {
+    throw new Error('Filebase key and secret are required');
+  }
+}
 export default config;

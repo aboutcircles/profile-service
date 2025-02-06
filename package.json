@@ -39,6 +39,7 @@
     "multihashes": "^4.0.3",
     "sharp": "^0.33.4",
     "sqlstring": "^2.3.3",
+    "uuid": "^11.0.5",
     "viem": "^2.21.54",
     "winston": "^3.13.1"
   }

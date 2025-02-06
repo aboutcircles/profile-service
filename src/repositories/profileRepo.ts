@@ -7,7 +7,7 @@ export interface Profile {
   CID: string;
   lastUpdatedAt: number;
   name: string;
-  description: string;
+  description?: string;
   registeredName: string | null;
 }
 
