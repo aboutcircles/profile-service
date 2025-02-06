@@ -12,7 +12,6 @@ const config = {
     port: process.env.IPFS_PORT || 5001,
     protocol: process.env.IPFS_PROTOCOL || 'http',
   },
-  ipfsGateway: process.env.IPFS_GATEWAY || 'https://rpc.aboutcircles.com/profiles',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   maxImageSizeKB: parseInt(process.env.MAX_IMAGE_SIZE_KB || '150'),
   descriptionLength: parseInt(process.env.DESCRIPTION_LENGTH || '500'),
@@ -21,11 +20,13 @@ const config = {
   defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
   maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
   maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
-  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '200'), // New configurable max size for the cache.ts
-  usePinningApi: process.env.USE_PINNING_API === 'true',
-  pinningApiKey: process.env.PINNING_API_KEY,
-  pinningApiSecret: process.env.PINNING_API_SECRET,
-  pinningApiUrl: process.env.PINNING_API_URL,
+  cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '25000'),
+  useS3: process.env.USE_S3 === 'true',
+  ipfsGateway: process.env.IPFS_GATEWAY,
+  s3Key: process.env.S3_KEY,
+  s3Secret: process.env.S3_SECRET,
+  s3Bucket: process.env.S3_BUCKET,
+  s3ApiUrl: process.env.S3_API_URL || 'https://s3.filebase.com',
   maxProfileSize: 0,
 };
 
@@ -34,9 +35,15 @@ config.maxProfileSize = config.descriptionLength + config.imageUrlLength + confi
 if (!config.databasePath) {
   throw new Error('DATABASE_PATH is required');
 }
-if (config.usePinningApi) {
-  if (!config.pinningApiKey || !config.pinningApiSecret) {
-    throw new Error('Filebase key and secret are required');
+if (config.useS3) {
+  if (!config.s3ApiUrl) {
+    throw new Error('PINNING_API_URL is required when used with pinning API.');
+  }
+  if (!config.ipfsGateway) {
+    throw new Error('IPFS_GATEWAY is required when used with pinning API.');
+  }
+  if (!config.s3Key || !config.s3Secret || !config.s3Bucket) {
+    throw new Error('Pinning api key, secret and bucket are required');
   }
 }
 export default config;

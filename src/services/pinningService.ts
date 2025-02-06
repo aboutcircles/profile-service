@@ -8,11 +8,7 @@ import config from '../config/config';
 import {CacheService} from '../utils/cache';
 import {PersistenceService} from './persistenceService';
 import {ProfileValidator} from './profileValidator';
-
-interface FilebasePinResponse {
-  cid: string;
-  name: string;
-}
+import AWS from "aws-sdk";
 
 export class PinningService implements PersistenceService {
   profileCache: CacheService<SanitizedProfile>;
@@ -35,45 +31,33 @@ export class PinningService implements PersistenceService {
   }
 
   async pin(profile: SanitizedProfile): Promise<string> {
-    try {
-      // Use the 'form-data' library for Node environments
-      const formData = new FormData();
+    return new Promise((resolve, reject) => {
+      try {
+        const s3 = new AWS.S3({
+          endpoint: config.s3ApiUrl,
+          region: 'us-east-1',
+          signatureVersion: 'v4',
+          accessKeyId: config.s3Key,
+          secretAccessKey: config.s3Secret,
+        });
 
-      // Create a buffer from your JSON
-      const jsonBuffer = Buffer.from(JSON.stringify(profile), 'utf-8');
-      const fileName = `${uuidv4()}.json`;
+        const jsonBuffer = Buffer.from(JSON.stringify(profile), 'utf-8');
+        const params = {
+          Bucket: <string>config.s3Bucket,
+          Key: uuidv4(),
+          Body: jsonBuffer
+        };
 
-      // Append to form data (specify filename & content type)
-      formData.append('file', jsonBuffer, {
-        filename: fileName,
-        contentType: 'application/json',
-      });
-
-      // Post using Axios
-      const response = await axios.post<FilebasePinResponse>(
-        'https://api.filebase.com/v1/ipfs/pin',
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${config.pinningApiKey}:${config.pinningApiSecret}`,
-            ...formData.getHeaders(),
-          },
-        }
-      );
-
-      if (response.status !== 200) {
-        throw new Error(
-          `Filebase API returned an error: ${response.status} ${response.statusText} - ${JSON.stringify(
-            response.data
-          )}`
-        );
+        const request = s3.putObject(params);
+        request.on('httpHeaders', (statusCode, headers) => {
+          resolve(headers['x-amz-meta-cid']);
+        });
+        request.send();
+      } catch (err) {
+        console.error(`Error uploading profile ${JSON.stringify(profile)} to Filebase:`, err);
+        reject(err);
       }
-
-      return response.data.cid;
-    } catch (error) {
-      logError('Error pinning JSON to Filebase:', error);
-      throw error;
-    }
+    });
   }
 
   initialize = async () => {
@@ -101,37 +85,59 @@ export class PinningService implements PersistenceService {
       );
     }
 
-    const gatewayUrl = `${config.ipfsGateway}/${cid}`;
+    const gatewayUrl = `${config.ipfsGateway}${cid}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutInMs);
 
-    let data: Uint8Array;
+    let chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutInMs);
-
-      const response = await fetch(gatewayUrl, {
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
+      const response = await fetch(gatewayUrl, {signal: controller.signal});
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Gateway returned status ${response.status}`);
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      data = new Uint8Array(arrayBuffer);
-
-      if (data.byteLength > config.maxProfileSize) {
-        this.addToBlackList(cid);
-        throw new Error(
-          `Response size exceeds ${config.maxProfileSize} byte limit`
-        );
+      // Stream the body
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No readable stream in fetch response');
       }
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+
+        if (!value) continue; // Occasionally value could be undefined
+
+        totalBytes += value.byteLength;
+
+        // If we exceed the limit, abort ASAP
+        if (totalBytes > config.maxProfileSize) {
+          this.addToBlackList(cid);
+          controller.abort(); // will cause an error below
+          throw new Error(`Response size exceeds ${config.maxProfileSize} byte limit`);
+        }
+
+        chunks.push(value);
+      }
+
     } catch (error) {
       logError('Failed to fetch profile from IPFS gateway', error);
       throw new Error('Failed to fetch profile from IPFS gateway');
     }
 
+    // Combine all chunks into a single Uint8Array
+    let data = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    // Now parse JSON
     let profile: any;
     try {
       profile = JSON.parse(Buffer.from(data).toString('utf-8'));
@@ -160,11 +166,11 @@ export class PinningService implements PersistenceService {
     logInfo(`Pinning CID: ${cid} via pinning service`);
 
     try {
-      const response = await fetch(config.pinningApiUrl!, {
+      const response = await fetch(config.s3ApiUrl!, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.pinningApiKey}:${config.pinningApiSecret}`,
+          Authorization: `Bearer ${config.s3Key}:${config.s3Secret}`,
         },
         body: JSON.stringify({cid}),
       });

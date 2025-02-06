@@ -21,7 +21,7 @@ app.use(timeout(`${config.defaultTimeout}ms`));
 
 app.use(errorHandler);
 
-const persistenceService: PersistenceService = config.usePinningApi ? new PinningService() : new KuboService();
+const persistenceService: PersistenceService = config.useS3 ? new PinningService() : new KuboService();
 const indexerService = new IndexerService(persistenceService);
 
 (async () => {

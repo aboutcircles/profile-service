@@ -1,6 +1,6 @@
 {
   "name": "@aboutcircles/profile-pinning-service",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "main": "dist/index.js",
   "scripts": {
     "build": "npx tsc",
@@ -25,6 +25,7 @@
     "@circles-sdk/data": "^0.15.1",
     "@types/bs58": "^4.0.4",
     "@types/sqlstring": "^2.3.2",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.7.9",
     "better-sqlite3": "^11.6.0",
     "body-parser": "1.20.3",
