@@ -3,7 +3,7 @@ import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
 
 import config from '../config/config';
-import ProfileRepo, {Profile} from '../repositories/profileRepo';
+import {ProfileRepository, Profile} from '../repositories/profileRepo';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logError, logInfo, logWarn} from '../utils/logger';
@@ -23,7 +23,7 @@ export class IndexerService {
     transport: http(),
   });
 
-  constructor(private persistenceService: PersistenceService) {}
+  constructor(private persistenceService: PersistenceService, private profileRepository: ProfileRepository) {}
 
   async initialize(): Promise<void> {
     const {CirclesRpc, CirclesData} = await import('@circles-sdk/data');
@@ -32,7 +32,7 @@ export class IndexerService {
     this.circlesData = new CirclesData(circlesRpc);
 
     const latestBlock = await this.fetchLatestBlock();
-    const lastProcessedBlock = ProfileRepo.getLastProcessedBlock();
+    const lastProcessedBlock = this.profileRepository.getLastProcessedBlock();
 
     // subscribe to events before awaiting catchUpOnMissedEvents for accumulating new events to queue
     this.startWebSocketSubscription();
@@ -130,7 +130,7 @@ export class IndexerService {
       registeredName: null,
     };
 
-    ProfileRepo.upsertProfile(profile);
+    this.profileRepository.upsertProfile(profile);
   }
 
   private async processRegisteredName(event: any): Promise<void> {
@@ -169,7 +169,7 @@ export class IndexerService {
         description: '', // Will be updated by UpdateMetadataDigest event
         registeredName: name,
       };
-      ProfileRepo.updateProfile(profile);
+      this.profileRepository.updateProfile(profile);
       logInfo(`Attempted to update registered name for ${avatar ?? organization ?? group}: ${name}`);
     }
   }
@@ -224,10 +224,10 @@ export class IndexerService {
   private async handleReorg(currentBlockNumber: number): Promise<void> {
     const startBlock = Math.max(currentBlockNumber - this.reorgDepth, 0);
 
-    logInfo(`Handling reorg: Deleting data older than block ${startBlock}`);
+    logInfo(`Handling reorg: Deleting data newer than block ${startBlock}`);
 
-    // Delete all records older than currentBlockNumber - 12
-    ProfileRepo.deleteDataOlderThanBlock(startBlock);
+    // Delete all records newer than currentBlockNumber - 12
+    this.profileRepository.deleteDataOlderThanBlock(startBlock);
 
     // Re-index blocks from startBlock
     this.handleCatchingUpWithBufferedEvents(startBlock, currentBlockNumber);

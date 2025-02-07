@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import timeout from 'connect-timeout';
 import config from './config/config';
-import ProfileRepo from './repositories/profileRepo';
+import {ProfileRepository} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
 import {KuboService} from './services/kuboService';
 import {errorHandler} from './utils/errorHandler';
@@ -22,7 +22,8 @@ app.use(timeout(`${config.defaultTimeout}ms`));
 app.use(errorHandler);
 
 const persistenceService: PersistenceService = config.useS3 ? new PinningService() : new KuboService();
-const indexerService = new IndexerService(persistenceService);
+let profileRepo: ProfileRepository = new ProfileRepository();
+let indexerService = new IndexerService(persistenceService, profileRepo);
 
 (async () => {
   await indexerService.initialize();
@@ -118,7 +119,7 @@ app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
       throw new Error('Failed to sanitize profile');
     }
 
-    const cid = persistenceService.pin(validation.sanitizedProfile);
+    const cid = await persistenceService.pin(validation.sanitizedProfile);
     console.log('JSON pinned to IPFS with CID:', cid);
     if (req.timedout) return;
     return res.json({cid: cid});
@@ -164,7 +165,10 @@ app.get('/search', (req, res) => {
       });
     }
 
-    const results = ProfileRepo.searchProfiles(sanitizeResult.sanitized);
+    const results = profileRepo?.searchProfiles(sanitizeResult.sanitized);
+    if (!results) {
+      return res.status(500).json({error: 'Internal Server Error'});
+    }
 
     const sanitizedResults = results.map(result => ({
       name: result.name,
