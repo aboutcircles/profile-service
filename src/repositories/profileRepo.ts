@@ -41,14 +41,6 @@ export class ProfileRepository {
       DELETE FROM profiles WHERE lastUpdatedAt >= ?;
   `);
 
-  /**
-   * Minimal single-quote escape to prevent straightforward SQL injection.
-   */
-  private escapeSingleQuotes(str: string): string {
-    // replace every ' with ''
-    return str.replace(/'/g, "''");
-  }
-
   getLastProcessedBlock(): number {
     return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
   }
@@ -67,9 +59,9 @@ export class ProfileRepository {
 
   /**
    * searchProfiles:
-   *  - If user provides `name` or `description`, we do a FTS join (on `profiles_fts`)
-   *    and check each column separately with `f.name MATCH ...`, `f.description MATCH ...`.
-   *  - If no name or description is given, skip FTS entirely and just filter by address/CID/registeredName.
+   *  - If user provides `name` or `description`, we do an FTS join (on `profiles_fts`)
+   *    and match each column separately (`f.name MATCH ...`, `f.description MATCH ...`).
+   *  - If no name or description is given, we skip the FTS join and just filter by address/CID/registeredName.
    */
   searchProfiles(filters: {
     name?: string;
@@ -78,60 +70,88 @@ export class ProfileRepository {
     CID?: string;
     registeredName?: string;
   }): any[] {
-    // Collect the optional equality filters (on the main "profiles" table).
-    const mainWhereClauses: string[] = [];
-    if (filters.address) {
-      mainWhereClauses.push(`p.address = '${this.escapeSingleQuotes(filters.address)}'`);
-    }
-    if (filters.CID) {
-      mainWhereClauses.push(`p.CID = '${this.escapeSingleQuotes(filters.CID)}'`);
-    }
-    if (filters.registeredName) {
-      mainWhereClauses.push(`p.registeredName = '${this.escapeSingleQuotes(filters.registeredName)}'`);
-    }
+    // If no FTS filters are given, run a simpler query directly on `profiles`.
+    const hasFts = !!(filters.name || filters.description);
 
-    // Collect FTS MATCH clauses, one per FTS column (name, description).
-    const ftsClauses: string[] = [];
-    if (filters.name) {
-      const escapedName = this.escapeSingleQuotes(filters.name);
-      // for prefix searching, append '*'
-      ftsClauses.push(`f.name MATCH '${escapedName}*'`);
-    }
-    if (filters.description) {
-      const escapedDesc = this.escapeSingleQuotes(filters.description);
-      ftsClauses.push(`f.description MATCH '${escapedDesc}*'`);
-    }
-
-    // If no name/description provided, we skip FTS entirely
-    if (ftsClauses.length === 0) {
+    if (!hasFts) {
+      // -- CASE 1: No FTS-based filtering --
       let sql = `
-          SELECT p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
-          FROM profiles p
+        SELECT
+          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+        FROM profiles p
       `;
-      if (mainWhereClauses.length > 0) {
-        sql += ' WHERE ' + mainWhereClauses.join(' AND ');
-      }
-      sql += ` LIMIT ${config.maxListSize}`;
-      return db.prepare(sql).all();
-    }
 
-    // We have at least one FTS column to search -> join with `profiles_fts f`.
-    let sql = `
-      SELECT p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (filters.address) {
+        conditions.push('p.address = ?');
+        params.push(filters.address);
+      }
+      if (filters.CID) {
+        conditions.push('p.CID = ?');
+        params.push(filters.CID);
+      }
+      if (filters.registeredName) {
+        conditions.push('p.registeredName = ?');
+        params.push(filters.registeredName);
+      }
+
+      if (conditions.length > 0) {
+        sql += ' WHERE ' + conditions.join(' AND ');
+      }
+
+      // Add a limit placeholder (better-sqlite3 supports LIMIT ?)
+      sql += ' LIMIT ?';
+      params.push(config.maxListSize);
+
+      return db.prepare(sql).all(params);
+    } else {
+      // -- CASE 2: At least one FTS filter (name or description) --
+      let sql = `
+        SELECT
+          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
         FROM profiles_fts f
         JOIN profiles p ON p.rowid = f.rowid
-       WHERE
-    `;
-    // Insert all the FTS column matches with AND
-    sql += ftsClauses.join(' AND ');
+        WHERE
+      `;
 
-    // Also append any equality filters
-    if (mainWhereClauses.length > 0) {
-      sql += ' AND ' + mainWhereClauses.join(' AND ');
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      // FTS conditions first
+      if (filters.name) {
+        conditions.push('f.name MATCH ?');
+        // For prefix searching: add "*" at the end
+        params.push(filters.name + '*');
+      }
+      if (filters.description) {
+        conditions.push('f.description MATCH ?');
+        params.push(filters.description + '*');
+      }
+
+      // Non-FTS equality conditions (address, CID, registeredName)
+      if (filters.address) {
+        conditions.push('p.address = ?');
+        params.push(filters.address);
+      }
+      if (filters.CID) {
+        conditions.push('p.CID = ?');
+        params.push(filters.CID);
+      }
+      if (filters.registeredName) {
+        conditions.push('p.registeredName = ?');
+        params.push(filters.registeredName);
+      }
+
+      // Join all conditions with AND
+      sql += conditions.join(' AND ');
+
+      // Add a limit placeholder
+      sql += ' LIMIT ?';
+      params.push(config.maxListSize);
+
+      return db.prepare(sql).all(params);
     }
-
-    sql += ` LIMIT ${config.maxListSize}`;
-
-    return db.prepare(sql).all();
   }
 }
