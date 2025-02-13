@@ -28,6 +28,8 @@ const config = {
   s3Bucket: process.env.S3_BUCKET,
   s3ApiUrl: process.env.S3_API_URL || 'https://s3.filebase.com',
   maxListSize: parseInt(process.env.MAX_LIST_SIZE || '50'),
+  maxAddressesSearchSize: parseInt(process.env.MAX_ADDRESSES_SEARCH_SIZE || '1000'),
+  defaultAddressesSearchLimit: parseInt(process.env.DEFAULT_ADDRESSES_SEARCH_LIMIT || '50'),
   maxProfileSize: 0,
 };
 

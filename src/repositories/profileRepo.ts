@@ -57,6 +57,33 @@ export class ProfileRepository {
     this.deleteOlderThanBlockStmt.run(blockNumber);
   }
 
+  searchProfilesByAddresses(addresses: string[], limit: number = config.defaultAddressesSearchLimit, offset: number = 0): { results: Profile[], total: number } {
+    if (!addresses.length) return { results: [], total: 0 };
+    
+    const placeholders = addresses.map(() => '?').join(',');
+    
+    // Get total count
+    const countSql = `
+      SELECT COUNT(*) as total
+      FROM profiles p
+      WHERE p.address IN (${placeholders})
+    `;
+    const { total } = db.prepare(countSql).get(addresses) as { total: number };
+    
+    // Get paginated results
+    const sql = `
+      SELECT 
+        p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+      FROM profiles p
+      WHERE p.address IN (${placeholders})
+      LIMIT ? OFFSET ?
+    `;
+    
+    const results = db.prepare(sql).all([...addresses, limit, offset]) as Profile[];
+    
+    return { results, total };
+  }
+
   /**
    * searchProfiles:
    *  - If user provides `name` or `description`, we do an FTS join (on `profiles_fts`)

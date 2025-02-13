@@ -142,6 +142,76 @@ app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
   }
 });
 
+app.post('/search/addresses', (req, res) => {
+  try {
+    const { addresses = [], limit, offset = 0 } = req.body;
+
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return res.status(400).json({ error: 'Addresses array is required and cannot be empty' });
+    }
+
+    if (addresses.length > config.maxAddressesSearchSize) {
+      return res.status(400).json({ 
+        error: `Maximum number of addresses exceeded. Limit is ${config.maxAddressesSearchSize}` 
+      });
+    }
+
+    const searchLimit = Math.min(
+      limit || config.defaultAddressesSearchLimit,
+      config.maxAddressesSearchSize
+    );
+
+    if (offset < 0) {
+      return res.status(400).json({ error: 'Offset cannot be negative' });
+    }
+
+    const sanitizeResult = sanitizeSearchParams({
+      addresses: addresses.join(',')  // Convert array to string for sanitization
+    });
+
+    if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
+      return res.status(400).json({
+        error: 'Invalid addresses format',
+        details: sanitizeResult.errors
+      });
+    }
+
+    // Split back into array after sanitization
+    const sanitizedAddresses = sanitizeResult.sanitized.addresses?.split(',') || [];
+    
+    const searchResult = profileRepo?.searchProfilesByAddresses(
+      sanitizedAddresses,
+      searchLimit,
+      offset
+    );
+
+    if (!searchResult) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+    const sanitizedResults = searchResult.results.map(result => ({
+      name: result.name,
+      description: result.description,
+      address: result.address,
+      CID: result.CID,
+      lastUpdatedAt: result.lastUpdatedAt,
+      registeredName: result.registeredName,
+    }));
+
+    res.json({
+      results: sanitizedResults,
+      pagination: {
+        total: searchResult.total,
+        limit: searchLimit,
+        offset: offset
+      }
+    });
+  } catch (error) {
+    logError('Error searching profiles by addresses:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.get('/search', (req, res) => {
   try {
     const {name, description, address, CID, registeredName} = req.query;
