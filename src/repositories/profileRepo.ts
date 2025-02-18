@@ -57,6 +57,22 @@ export class ProfileRepository {
     this.deleteOlderThanBlockStmt.run(blockNumber);
   }
 
+  searchProfilesByAddresses(addresses: string[]): Profile[] {
+    if (!addresses.length) return [];
+    
+    const placeholders = addresses.map(() => '?').join(',');
+    
+    const sql = `
+      SELECT 
+        p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+      FROM profiles p
+      WHERE p.address IN (${placeholders})
+      LIMIT ?
+    `;
+    
+    return db.prepare(sql).all([...addresses, config.maxListSize]) as Profile[];
+  }
+
   /**
    * searchProfiles:
    *  - If user provides `name` or `description`, we do an FTS join (on `profiles_fts`)
@@ -85,8 +101,8 @@ export class ProfileRepository {
       const params: any[] = [];
 
       if (filters.address) {
-        conditions.push('p.address = ?');
-        params.push(filters.address);
+        conditions.push('p.address LIKE ?');
+        params.push(`${filters.address}%`);
       }
       if (filters.CID) {
         conditions.push('p.CID = ?');
@@ -132,8 +148,8 @@ export class ProfileRepository {
 
       // Non-FTS equality conditions (address, CID, registeredName)
       if (filters.address) {
-        conditions.push('p.address = ?');
-        params.push(filters.address);
+        conditions.push('p.address LIKE ?');
+        params.push(`${filters.address}%`);
       }
       if (filters.CID) {
         conditions.push('p.CID = ?');

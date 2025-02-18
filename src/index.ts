@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import timeout from 'connect-timeout';
 import config from './config/config';
-import {ProfileRepository} from './repositories/profileRepo';
+import {ProfileRepository, Profile} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
 import {KuboService} from './services/kuboService';
 import {errorHandler} from './utils/errorHandler';
@@ -139,6 +139,56 @@ app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
     logError('Failed to connect to IPFS', error);
     if (req.timedout) return;
     return res.status(500).json({error: (error as Error).message});
+  }
+});
+
+app.post('/search/addresses', (req, res) => {
+  try {
+    const { addresses = [] } = req.body;
+
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return res.status(400).json({ error: 'Addresses array is required and cannot be empty' });
+    }
+
+    if (addresses.length > config.maxAddressesSearchSize) {
+      return res.status(400).json({ 
+        error: `Maximum number of addresses exceeded. Limit is ${config.maxAddressesSearchSize}` 
+      });
+    }
+
+    const sanitizeResult = sanitizeSearchParams({
+      addresses: addresses.join(',')  // Convert array to string for sanitization
+    });
+
+    if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
+      return res.status(400).json({
+        error: 'Invalid addresses format',
+        details: sanitizeResult.errors
+      });
+    }
+
+    // Split back into array after sanitization
+    const sanitizedAddresses = sanitizeResult.sanitized.addresses?.split(',') || [];
+    
+    const results = profileRepo?.searchProfilesByAddresses(sanitizedAddresses);
+
+    if (!results) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+    const sanitizedResults = results.map((result: Profile) => ({
+      name: result.name,
+      description: result.description,
+      address: result.address,
+      CID: result.CID,
+      lastUpdatedAt: result.lastUpdatedAt,
+      registeredName: result.registeredName,
+    }));
+
+    res.json({ results: sanitizedResults });
+  } catch (error) {
+    logError('Error searching profiles by addresses:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
