@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import timeout from 'connect-timeout';
 import config from './config/config';
-import {ProfileRepository} from './repositories/profileRepo';
+import {ProfileRepository, Profile} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
 import {KuboService} from './services/kuboService';
 import {errorHandler} from './utils/errorHandler';
@@ -144,7 +144,7 @@ app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
 
 app.post('/search/addresses', (req, res) => {
   try {
-    const { addresses = [], limit, offset = 0 } = req.body;
+    const { addresses = [] } = req.body;
 
     if (!Array.isArray(addresses) || addresses.length === 0) {
       return res.status(400).json({ error: 'Addresses array is required and cannot be empty' });
@@ -154,15 +154,6 @@ app.post('/search/addresses', (req, res) => {
       return res.status(400).json({ 
         error: `Maximum number of addresses exceeded. Limit is ${config.maxAddressesSearchSize}` 
       });
-    }
-
-    const searchLimit = Math.min(
-      limit || config.defaultAddressesSearchLimit,
-      config.maxAddressesSearchSize
-    );
-
-    if (offset < 0) {
-      return res.status(400).json({ error: 'Offset cannot be negative' });
     }
 
     const sanitizeResult = sanitizeSearchParams({
@@ -179,17 +170,13 @@ app.post('/search/addresses', (req, res) => {
     // Split back into array after sanitization
     const sanitizedAddresses = sanitizeResult.sanitized.addresses?.split(',') || [];
     
-    const searchResult = profileRepo?.searchProfilesByAddresses(
-      sanitizedAddresses,
-      searchLimit,
-      offset
-    );
+    const results = profileRepo?.searchProfilesByAddresses(sanitizedAddresses);
 
-    if (!searchResult) {
+    if (!results) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
 
-    const sanitizedResults = searchResult.results.map(result => ({
+    const sanitizedResults = results.map((result: Profile) => ({
       name: result.name,
       description: result.description,
       address: result.address,
@@ -198,14 +185,7 @@ app.post('/search/addresses', (req, res) => {
       registeredName: result.registeredName,
     }));
 
-    res.json({
-      results: sanitizedResults,
-      pagination: {
-        total: searchResult.total,
-        limit: searchLimit,
-        offset: offset
-      }
-    });
+    res.json({ results: sanitizedResults });
   } catch (error) {
     logError('Error searching profiles by addresses:', error);
     res.status(500).json({ error: 'Internal Server Error' });
