@@ -113,7 +113,7 @@ export class ProfileRepository {
 
       if (filters.address) {
         conditions.push('p.address LIKE ?');
-        params.push(`%${filters.address}%`);
+        params.push(`${filters.address}%`);
       }
       if (filters.CID) {
         conditions.push('p.CID = ?');
@@ -160,7 +160,7 @@ export class ProfileRepository {
       // Non-FTS equality conditions (address, CID, registeredName)
       if (filters.address) {
         conditions.push('p.address LIKE ?');
-        params.push(`%${filters.address}%`);
+        params.push(`${filters.address}%`);
       }
       if (filters.CID) {
         conditions.push('p.CID = ?');
