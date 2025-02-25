@@ -1,15 +1,7 @@
 import type { Statement } from 'better-sqlite3';
 import db from '../database/db';
 import config from '../config/config';
-
-export interface Profile {
-  address: string;
-  CID: string;
-  lastUpdatedAt: number;
-  name: string;
-  description?: string;
-  registeredName: string | null;
-}
+import { Profile } from '../types';
 
 export class ProfileRepository {
   private insertOrUpdateProfileStmt = db.prepare(`

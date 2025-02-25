@@ -3,7 +3,8 @@ import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
 
 import config from '../config/config';
-import {ProfileRepository, Profile} from '../repositories/profileRepo';
+import {ProfileRepository} from '../repositories/profileRepo';
+import { Profile } from '../types';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logError, logInfo, logWarn} from '../utils/logger';

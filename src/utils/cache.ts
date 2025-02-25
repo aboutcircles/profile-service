@@ -1,21 +1,21 @@
 import {LRUCache} from "lru-cache";
 import {logInfo} from "./logger";
-import {SanitizedProfile} from "./sanitizer";
+import {IPFSDataProfile} from "../types";
 
 export interface RetrievalHook<T> {
   (key: string, timeoutInMs: number): Promise<T | undefined>;
 }
 
 export class CacheService<T> {
-  private cache: LRUCache<string, SanitizedProfile>;
-  private retrievalHook: RetrievalHook<SanitizedProfile>;
+  private cache: LRUCache<string, IPFSDataProfile>;
+  private retrievalHook: RetrievalHook<IPFSDataProfile>;
 
-  constructor(maxSize: number, retrievalHook: RetrievalHook<SanitizedProfile>) {
-    this.cache = new LRUCache<string, SanitizedProfile>({ max: maxSize });
+  constructor(maxSize: number, retrievalHook: RetrievalHook<IPFSDataProfile>) {
+    this.cache = new LRUCache<string, IPFSDataProfile>({ max: maxSize });
     this.retrievalHook = retrievalHook;
   }
 
-  public async get(key: string, timeoutInMs: number): Promise<SanitizedProfile | undefined> {
+  public async get(key: string, timeoutInMs: number): Promise<IPFSDataProfile | undefined> {
     const cachedValue = this.cache.get(key);
     if (cachedValue) {
       logInfo(`Cache hit for key: ${key}`);
@@ -32,7 +32,7 @@ export class CacheService<T> {
     return value;
   }
 
-  public set(key: string, value: SanitizedProfile): void {
+  public set(key: string, value: IPFSDataProfile): void {
     this.cache.set(key, value);
   }
 
