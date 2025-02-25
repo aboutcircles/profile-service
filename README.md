@@ -11,6 +11,7 @@ It supports retrieving single or multiple profiles by CID, searching profiles by
   - [`GET /getBatch`](#get-getbatch)
   - [`POST /pin`](#post-pin)
   - [`GET /search`](#get-search)
+  - [`POST /search/addresses`](#post-searchaddresses)
   - [`GET /health`](#get-health)
 - [Options](#options)
   - [Caching](#caching)
@@ -92,15 +93,31 @@ When you `GET` a profile by its CID, the API will fetch and cache it (if not alr
   - `address`: exact match on the profile’s blockchain address.
   - `CID`: exact match on the stored IPFS CID.
   - `registeredName`: exact match on the profile’s short/registered name from the chain.
+  - `fetchComplete`: (boolean, optional) if set to `true`, fetches complete profile data from IPFS including images.
 
 When multiple parameters are provided, all of them are combined with a logical "AND".
 
 - **Responses**
-  - **200 OK**: Returns an array of matching profiles, each with `name`, `description`, `address`, `CID`, `lastUpdatedAt`, and `registeredName`.
+  - **200 OK**: Returns an array of matching profiles, each with `name`, `description`, `address`, `CID`, `lastUpdatedAt`, and `registeredName`. If `fetchComplete` is `true`, also includes `imageUrl` and `previewImageUrl` when available.
   - **400 Bad Request**: If no parameters are provided or if they fail basic validation.
   - **500 Internal Server Error**: If something goes wrong searching the DB.
 
 **Note:** Searching by `name` or `description` will do a "contains" match. Fields like `address`, `CID`, and `registeredName` must match exactly.
+
+---
+
+### `POST /search/addresses`
+
+**Search profiles by multiple addresses.**
+
+- **Request Body** (JSON):
+  - `addresses` (array of strings, required): Array of blockchain addresses to search for.
+  - `fetchComplete` (boolean, optional): If set to `true`, fetches complete profile data from IPFS including images.
+
+- **Responses**
+  - **200 OK**: Returns a JSON object with a `results` array containing matching profiles, each with `name`, `description`, `address`, `CID`, `lastUpdatedAt`, and `registeredName`. If `fetchComplete` is `true`, also includes `imageUrl` and `previewImageUrl` when available.
+  - **400 Bad Request**: If `addresses` is missing, empty, or exceeds the maximum allowed (default 1000).
+  - **500 Internal Server Error**: If something goes wrong searching the DB.
 
 ---
 
@@ -198,6 +215,63 @@ curl -X GET "http://localhost:3000/search?name=alice"
     "registeredName": "alice" 
   }
 ]
+```
+
+### GET a search with complete profile data
+```bash
+curl -X GET "http://localhost:3000/search?name=alice&fetchComplete=true"
+```
+**Response (200)**
+```json
+[
+  {
+    "name": "AliceInCircles",
+    "description": "Just Alice's profile",
+    "address": "0x123...",
+    "CID": "Qm123abc...",
+    "lastUpdatedAt": 12345678,
+    "registeredName": "alice",
+    "imageUrl": "https://example.com/alice.jpg",
+    "previewImageUrl": "data:image/png;base64,..."
+  }
+]
+```
+
+### POST a search by addresses with complete profile data
+```bash
+curl -X POST "http://localhost:3000/search/addresses" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "addresses": ["0x123...", "0x456..."],
+    "fetchComplete": true
+  }'
+```
+**Response (200)**
+```json
+{
+  "results": [
+    {
+      "name": "AliceInCircles",
+      "description": "Just Alice's profile",
+      "address": "0x123...",
+      "CID": "Qm123abc...",
+      "lastUpdatedAt": 12345678,
+      "registeredName": "alice",
+      "imageUrl": "https://example.com/alice.jpg",
+      "previewImageUrl": "data:image/png;base64,..."
+    },
+    {
+      "name": "BobInCircles",
+      "description": "Just Bob's profile",
+      "address": "0x456...",
+      "CID": "Qm456def...",
+      "lastUpdatedAt": 12345679,
+      "registeredName": "bob",
+      "imageUrl": "https://example.com/bob.jpg",
+      "previewImageUrl": "data:image/png;base64,..."
+    }
+  ]
+}
 ```
 
 ---
