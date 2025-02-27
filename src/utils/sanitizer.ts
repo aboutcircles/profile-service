@@ -1,12 +1,6 @@
 import { escape } from 'sqlstring';
 import DOMPurify from 'isomorphic-dompurify';
-
-export interface SanitizedProfile {
-    name: string;
-    description?: string;
-    imageUrl?: string;
-    previewImageUrl?: string;
-}
+import { IPFSDataProfile } from '../types';
 
 export interface ValidationResult<T> {
     isValid: boolean;
@@ -62,7 +56,7 @@ export function sanitizeString(input: string | null | undefined): ValidationResu
 }
 
 // strips unknown properties and sanitizes known properties
-export function sanitizeProfile(input: any): ValidationResult<SanitizedProfile> {
+export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
     const errors: string[] = [];
 
     // no need, cause now we're receiving more props, just ignore them
@@ -80,7 +74,7 @@ export function sanitizeProfile(input: any): ValidationResult<SanitizedProfile> 
         errors.push('Invalid name: ' + nameResult.errors.join(', '));
     }
 
-    const sanitized: SanitizedProfile = {
+    const sanitized: IPFSDataProfile = {
         name: nameResult.sanitized || '',
     };
 
@@ -120,6 +114,12 @@ export function sanitizeSearchParams(params: Record<string, any>): ValidationRes
     const errors: string[] = [];
     
     for (const [key, value] of Object.entries(params)) {
+        if (key === 'fetchComplete') {
+            // Special handling for boolean parameter
+            sanitized[key] = value === 'true' ? 'true' : 'false';
+            continue;
+        }
+        
         if (value !== undefined && value !== null) {
             const result = sanitizeString(value.toString());
             if (!result.isValid) {

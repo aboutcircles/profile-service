@@ -1,6 +1,6 @@
 import {LRUCache} from 'lru-cache';
 import {logError, logInfo} from '../utils/logger';
-import {SanitizedProfile} from '../utils/sanitizer';
+import {IPFSDataProfile} from '../types';
 import config from '../config/config';
 import {CacheService} from "../utils/cache";
 import {PersistenceService} from "./persistenceService";
@@ -9,13 +9,13 @@ import {ProfileValidator} from "./profileValidator";
 export class KuboService implements PersistenceService {
   private ipfs: any;
 
-  profileCache: CacheService<SanitizedProfile>;
+  profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
 
   constructor() {
     logInfo('constructing KuboService');
 
-    this.profileCache = new CacheService<SanitizedProfile>(
+    this.profileCache = new CacheService<IPFSDataProfile>(
       config.cacheMaxSize,
       this.fetchProfileFromOrigin.bind(this)
     );
@@ -32,7 +32,7 @@ export class KuboService implements PersistenceService {
     }
   }
 
-  async pin(profile: SanitizedProfile): Promise<string> {
+  async pin(profile: IPFSDataProfile): Promise<string> {
     const buffer = Buffer.from(JSON.stringify(profile));
     const result = await this.ipfs.add(buffer);
     await this.ipfs.pin.add(result.cid);
@@ -62,7 +62,7 @@ export class KuboService implements PersistenceService {
   fetchProfileFromOrigin = async (
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined> => {
+  ): Promise<IPFSDataProfile | undefined> => {
     logInfo(`Fetching profile for CID: ${cid} from origin (IPFS).`);
 
     if (this.isBlackListed(cid)) {
@@ -112,7 +112,7 @@ export class KuboService implements PersistenceService {
   getCachedProfile = async (
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined> => {
+  ): Promise<IPFSDataProfile | undefined> => {
     return this.profileCache.get(cid, timeoutInMs);
   };
 }

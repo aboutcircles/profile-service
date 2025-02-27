@@ -1,7 +1,8 @@
 import config from '../config/config';
 import {logError} from '../utils/logger';
 import sharp from "sharp";
-import {SanitizedProfile, sanitizeProfile} from "../utils/sanitizer";
+import {sanitizeProfile} from "../utils/sanitizer";
+import { IPFSDataProfile } from '../types';
 
 export class ProfileValidator {
   /**
@@ -45,7 +46,7 @@ export class ProfileValidator {
    */
   static async validateProfile(profile: any): Promise<{
     errors: string[];
-    sanitizedProfile?: SanitizedProfile;
+    sanitizedProfile?: IPFSDataProfile;
   }> {
     const sanitizeResult = sanitizeProfile(profile);
     if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {

@@ -3,7 +3,7 @@ import axios from 'axios';
 import {v4 as uuidv4} from 'uuid';
 import {logError, logInfo} from '../utils/logger';
 import {LRUCache} from 'lru-cache';
-import {SanitizedProfile} from '../utils/sanitizer';
+import {IPFSDataProfile} from '../types';
 import config from '../config/config';
 import {CacheService} from '../utils/cache';
 import {PersistenceService} from './persistenceService';
@@ -11,13 +11,13 @@ import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
 
 export class PinningService implements PersistenceService {
-  profileCache: CacheService<SanitizedProfile>;
+  profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
 
   constructor() {
     logInfo('Constructing FilebaseGatewayPersistenceService');
 
-    this.profileCache = new CacheService<SanitizedProfile>(
+    this.profileCache = new CacheService<IPFSDataProfile>(
       config.cacheMaxSize,
       this.fetchProfileFromOrigin.bind(this)
     );
@@ -30,7 +30,7 @@ export class PinningService implements PersistenceService {
     throw new Error('Method not implemented.');
   }
 
-  async pin(profile: SanitizedProfile): Promise<string> {
+  async pin(profile: IPFSDataProfile): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
         const s3 = new AWS.S3({
@@ -76,7 +76,7 @@ export class PinningService implements PersistenceService {
   fetchProfileFromOrigin = async (
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined> => {
+  ): Promise<IPFSDataProfile | undefined> => {
     logInfo(`Fetching profile for CID: ${cid} from IPFS gateway.`);
 
     if (this.isBlackListed(cid)) {
@@ -158,7 +158,7 @@ export class PinningService implements PersistenceService {
   getCachedProfile = async (
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined> => {
+  ): Promise<IPFSDataProfile | undefined> => {
     return this.profileCache.get(cid, timeoutInMs);
   };
 

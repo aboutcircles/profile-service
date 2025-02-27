@@ -1,12 +1,12 @@
 import {CacheService} from "../utils/cache";
 import {LRUCache} from "lru-cache";
-import {SanitizedProfile} from "../utils/sanitizer";
+import {IPFSDataProfile} from "../types";
 
 export interface PersistenceService {
   /**
-   * In-memory cache service for SanitizedProfile objects.
+   * In-memory cache service for IPFSDataProfile objects.
    */
-  profileCache: CacheService<SanitizedProfile>;
+  profileCache: CacheService<IPFSDataProfile>;
 
   /**
    * Blacklist cache to store invalid or disallowed CIDs.
@@ -40,7 +40,7 @@ export interface PersistenceService {
   fetchProfileFromOrigin(
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined>;
+  ): Promise<IPFSDataProfile | undefined>;
 
   /**
    * Returns a cached profile if available, or fetches it from IPFS using the CacheService.
@@ -51,14 +51,14 @@ export interface PersistenceService {
   getCachedProfile(
     cid: string,
     timeoutInMs: number
-  ): Promise<SanitizedProfile | undefined>;
+  ): Promise<IPFSDataProfile | undefined>;
 
   /**
    * Pins a profile to the IPFS node.
    * @param profile - The profile to pin.
    * @returns The IPFS CID of the pinned profile.
    */
-  pin(profile: SanitizedProfile): Promise<string>;
+  pin(profile: IPFSDataProfile): Promise<string>;
 
   /**
    * Checks if the storage service is healthy.

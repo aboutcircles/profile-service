@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import timeout from 'connect-timeout';
 import config from './config/config';
-import {ProfileRepository, Profile} from './repositories/profileRepo';
+import {ProfileRepository} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
 import {KuboService} from './services/kuboService';
 import {errorHandler} from './utils/errorHandler';
@@ -12,6 +12,7 @@ import {sanitizeSearchParams} from './utils/sanitizer';
 import {PinningService} from "./services/pinningService";
 import {ProfileValidator} from "./services/profileValidator";
 import {PersistenceService} from "./services/persistenceService";
+import { Profile, IPFSDataProfile, CompleteProfile } from './types';
 
 const app = express();
 
@@ -35,6 +36,41 @@ const haltOnTimedout = (req: Request, res: Response, next: () => void) => {
 
 const isValidCid = (cid: string | null | undefined): boolean =>
   !(!cid || cid.trim() === '' || cid.length != 46 || !cid.startsWith('Qm') || !/^[a-zA-Z0-9]*$/.test(cid));
+
+/**
+ * Fetches complete profiles from IPFS for the given database profiles.
+ * @param profiles - The database profiles to fetch complete data for.
+ * @param persistenceService - The service to use for fetching from IPFS.
+ * @param timeoutInMs - The timeout for each fetch operation.
+ * @returns An array of profiles with IPFS data merged in where available.
+ */
+async function fetchCompleteProfiles(
+  profiles: Profile[],
+  persistenceService: PersistenceService,
+  timeoutInMs: number
+): Promise<Array<CompleteProfile>> {
+  if (!profiles.length) return [];
+  
+  const fetchPromises = profiles.map(profile => {
+    if (isValidCid(profile.CID) && !persistenceService.isBlackListed(profile.CID)) {
+      return persistenceService.getCachedProfile(profile.CID, timeoutInMs)
+        .then(ipfsProfile => {
+          if (ipfsProfile) {
+            // Merge database profile with IPFS profile
+            return {
+              ...profile,
+              ...ipfsProfile
+            };
+          }
+          return profile;
+        })
+        .catch(() => profile); // Return original profile on error
+    }
+    return Promise.resolve(profile);
+  });
+  
+  return Promise.all(fetchPromises);
+}
 
 app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
   if (req.timedout) return;
@@ -68,7 +104,7 @@ app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
         return Promise.reject(new Error(`The CID ${cid.cid} is blacklisted because it failed validation previously`));
       }
     });
-    const profiles = await Promise.all(fetchPromises.map(p => p.catch((e: Error) => {
+    const profiles: (IPFSDataProfile | null | undefined)[] = await Promise.all(fetchPromises.map(p => p.catch((e: Error) => {
       logError('Failed to fetch profile', e);
       return null;
     })));
@@ -94,7 +130,7 @@ app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
   logInfo(`Received request for profile with CID: ${req.query.cid}`);
 
   try {
-    const profile = await persistenceService.getCachedProfile(req.query.cid as string, config.defaultTimeout - 30);
+    const profile: IPFSDataProfile | null | undefined = await persistenceService.getCachedProfile(req.query.cid as string, config.defaultTimeout - 30);
     if (req.timedout) return;
     return res.json(profile);
   } catch (error) {
@@ -144,7 +180,7 @@ app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
 
 app.post('/search/addresses', (req, res) => {
   try {
-    const { addresses = [] } = req.body;
+    const { addresses = [], fetchComplete } = req.body;
 
     if (!Array.isArray(addresses) || addresses.length === 0) {
       return res.status(400).json({ error: 'Addresses array is required and cannot be empty' });
@@ -157,7 +193,8 @@ app.post('/search/addresses', (req, res) => {
     }
 
     const sanitizeResult = sanitizeSearchParams({
-      addresses: addresses.join(',')  // Convert array to string for sanitization
+      addresses: addresses.join(','),  // Convert array to string for sanitization
+      fetchComplete: fetchComplete ? 'true' : 'false'
     });
 
     if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
@@ -176,16 +213,40 @@ app.post('/search/addresses', (req, res) => {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
 
-    const sanitizedResults = results.map((result: Profile) => ({
-      name: result.name,
-      description: result.description,
-      address: result.address,
-      CID: result.CID,
-      lastUpdatedAt: result.lastUpdatedAt,
-      registeredName: result.registeredName,
-    }));
-
-    res.json({ results: sanitizedResults });
+    // If fetchComplete is true, fetch complete profiles from IPFS
+    if (sanitizeResult.sanitized.fetchComplete === 'true') {
+      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout / 2)
+        .then(completeResults => {
+          const sanitizedResults = completeResults.map((result: CompleteProfile) => ({
+            name: result.name,
+            description: result.description,
+            address: result.address,
+            CID: result.CID,
+            lastUpdatedAt: result.lastUpdatedAt,
+            registeredName: result.registeredName,
+            imageUrl: result.imageUrl,
+            previewImageUrl: result.previewImageUrl
+          }));
+          
+          res.json({ results: sanitizedResults });
+        })
+        .catch(error => {
+          logError('Error fetching complete profiles:', error);
+          res.status(500).json({error: 'Error fetching complete profiles'});
+        });
+    } else {
+      // Original behavior - return only database profiles
+      const sanitizedResults = results.map((result: Profile) => ({
+        name: result.name,
+        description: result.description,
+        address: result.address,
+        CID: result.CID,
+        lastUpdatedAt: result.lastUpdatedAt,
+        registeredName: result.registeredName,
+      }));
+      
+      res.json({ results: sanitizedResults });
+    }
   } catch (error) {
     logError('Error searching profiles by addresses:', error);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -194,7 +255,7 @@ app.post('/search/addresses', (req, res) => {
 
 app.get('/search', (req, res) => {
   try {
-    const {name, description, address, CID, registeredName} = req.query;
+    const {name, description, address, CID, registeredName, fetchComplete} = req.query;
 
     if (!name && !description && !address && !CID && !registeredName) {
       return res.status(400).json({error: 'At least one search parameter is required'});
@@ -206,6 +267,7 @@ app.get('/search', (req, res) => {
       address,
       CID,
       registeredName,
+      fetchComplete
     });
 
     if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
@@ -215,21 +277,52 @@ app.get('/search', (req, res) => {
       });
     }
 
-    const results = profileRepo?.searchProfiles(sanitizeResult.sanitized);
+    const results = profileRepo?.searchProfiles({
+      name: sanitizeResult.sanitized.name,
+      description: sanitizeResult.sanitized.description,
+      address: sanitizeResult.sanitized.address,
+      CID: sanitizeResult.sanitized.CID,
+      registeredName: sanitizeResult.sanitized.registeredName
+    });
+    
     if (!results) {
       return res.status(500).json({error: 'Internal Server Error'});
     }
 
-    const sanitizedResults = results.map(result => ({
-      name: result.name,
-      description: result.description,
-      address: result.address,
-      CID: result.CID,
-      lastUpdatedAt: result.lastUpdatedAt,
-      registeredName: result.registeredName,
-    }));
-
-    res.json(sanitizedResults);
+    // If fetchComplete is true, fetch complete profiles from IPFS
+    if (sanitizeResult.sanitized.fetchComplete === 'true') {
+      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout / 2)
+        .then(completeResults => {
+          const sanitizedResults = completeResults.map(result => ({
+            name: result.name,
+            description: result.description,
+            address: result.address,
+            CID: result.CID,
+            lastUpdatedAt: result.lastUpdatedAt,
+            registeredName: result.registeredName,
+            imageUrl: result.imageUrl,
+            previewImageUrl: result.previewImageUrl
+          }));
+          
+          res.json(sanitizedResults);
+        })
+        .catch(error => {
+          logError('Error fetching complete profiles:', error);
+          res.status(500).json({error: 'Error fetching complete profiles'});
+        });
+    } else {
+      // Original behavior - return only database profiles
+      const sanitizedResults = results.map(result => ({
+        name: result.name,
+        description: result.description,
+        address: result.address,
+        CID: result.CID,
+        lastUpdatedAt: result.lastUpdatedAt,
+        registeredName: result.registeredName,
+      }));
+      
+      res.json(sanitizedResults);
+    }
   } catch (error) {
     logError('Error searching profiles:', error);
     res.status(500).json({error: 'Internal Server Error'});
