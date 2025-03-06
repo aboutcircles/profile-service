@@ -12,7 +12,7 @@ import {PersistenceService} from "./persistenceService";
 
 export class IndexerService {
   private circlesData: any;
-  private eventQueue = new EventQueue<any>();
+  private updateMetadataEventQueue = new EventQueue<any>();
   private nameEventQueue = new EventQueue<any>();
   private initialization = true;
 
@@ -49,8 +49,8 @@ export class IndexerService {
     await this.catchUpOnMissedEvents(fromBlock, toBlock);
     
     // Process metadata events first to ensure profiles exist
-    logInfo(`Processing ${this.eventQueue.isEmpty() ? 'no' : 'queued'} metadata events...`);
-    await this.eventQueue.process(this.processEvent.bind(this));
+    logInfo(`Processing ${this.updateMetadataEventQueue.isEmpty() ? 'no' : 'queued'} metadata events...`);
+    await this.updateMetadataEventQueue.process(this.processUpdateMetadata.bind(this));
     
     // Then process name events
     logInfo(`Processing ${this.nameEventQueue.isEmpty() ? 'no' : 'queued'} name events...`);
@@ -88,27 +88,31 @@ export class IndexerService {
     logInfo('Catching up on missed events: ', events.length);
 
     for (const event of events) {
-      try {
-        if (event.$event === 'CrcV2_UpdateMetadataDigest') {
-          if (this.initialization) {
-            this.eventQueue.enqueue(event);
-          } else {
-            await this.processEvent(event);
-          }
-        } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
-          if (this.initialization) {
-            this.nameEventQueue.enqueue(event);
-          } else {
-            await this.processRegisteredName(event);
-          }
-        }
-      } catch (e) {
-        console.error(`Couldn't process event:`, e);
-      }
+      await this.processEvent(event);
     }
   }
 
   private async processEvent(event: any): Promise<void> {
+    try {
+      if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+        if (this.initialization) {
+          this.updateMetadataEventQueue.enqueue(event);
+        } else {
+          await this.processUpdateMetadata(event);
+        }
+      } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
+        if (this.initialization) {
+          this.nameEventQueue.enqueue(event);
+        } else {
+          await this.processRegisteredName(event);
+        }
+      }
+    } catch (e) {
+      console.error(`Couldn't process event:`, e);
+    }
+  }
+
+  private async processUpdateMetadata(event: any): Promise<void> {
     logInfo(`Processing event from tx: ${event.transactionHash}, blockNumber: ${event.blockNumber}`);
 
     const {avatar, metadataDigest, blockNumber} = event;
@@ -181,19 +185,7 @@ export class IndexerService {
     events.subscribe((event: any) => {
       logInfo('Event received: ', event.$event);
 
-      if (event.$event === 'CrcV2_UpdateMetadataDigest') {
-        if (this.initialization) {
-          this.eventQueue.enqueue(event);
-        } else {
-          this.processEvent(event);
-        }
-      } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
-        if (this.initialization) {
-          this.nameEventQueue.enqueue(event);
-        } else {
-          this.processRegisteredName(event);
-        }
-      }
+      this.processEvent(event);
     });
   }
 
