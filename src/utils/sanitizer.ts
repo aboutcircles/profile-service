@@ -1,6 +1,6 @@
 import { escape } from 'sqlstring';
 import DOMPurify from 'isomorphic-dompurify';
-import { IPFSDataProfile } from '../types';
+import { IPFSDataProfile, CompleteProfile } from '../types';
 
 export interface ValidationResult<T> {
     isValid: boolean;
@@ -24,7 +24,7 @@ function containsDangerousContent(input: string): boolean {
     return DANGEROUS_PATTERNS.some(pattern => pattern.test(input));
 }
 
-// sanitizes a string by removing HTML/JS and SQL injection risks
+// Sanitizes a string by removing HTML/JS and SQL injection risks.
 export function sanitizeString(input: string | null | undefined): ValidationResult<string> {
     if (!input) {
         return { isValid: true, errors: [], sanitized: '' };
@@ -37,10 +37,10 @@ export function sanitizeString(input: string | null | undefined): ValidationResu
         };
     }
     
-    // escape SQL special characters
-    const sqlSafe = escape(input).slice(1, -1); // remove the quotes added by escape()
+    // Escape SQL special characters
+    const sqlSafe = escape(input).slice(1, -1); // Remove the quotes added by escape()
     
-    // sanitize HTML/JS
+    // Sanitize HTML/JS
     const sanitized = DOMPurify.sanitize(sqlSafe, {
         ALLOWED_TAGS: [], // Strip all HTML tags
         ALLOWED_ATTR: [], // Strip all attributes
@@ -55,29 +55,24 @@ export function sanitizeString(input: string | null | undefined): ValidationResu
     };
 }
 
-// strips unknown properties and sanitizes known properties
-export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
+// Strips unknown properties and sanitizes known properties, returning a CompleteProfile.
+export function sanitizeProfile(input: any): ValidationResult<CompleteProfile> {
     const errors: string[] = [];
-
-    // no need, cause now we're receiving more props, just ignore them
-    // const knownProperties = ['name', 'description', 'imageUrl', 'previewImageUrl'];
-    // const unknownProps = Object.keys(input).filter(key => !knownProperties.includes(key));
-    // if (unknownProps.length > 0) {
-    //     return {
-    //         isValid: false,
-    //         errors: [`Unknown properties detected: ${unknownProps.join(', ')}`]
-    //     };
-    // }
-
+    
     const nameResult = sanitizeString(input.name);
     if (!nameResult.isValid || !nameResult.sanitized) {
         errors.push('Invalid name: ' + nameResult.errors.join(', '));
     }
-
-    const sanitized: IPFSDataProfile = {
+    
+    // Initialize with properties from CompleteProfile; location is included.
+    const sanitized: Partial<CompleteProfile> = {
         name: nameResult.sanitized || '',
+        description: undefined,
+        imageUrl: undefined,
+        previewImageUrl: undefined,
+        location: undefined,
     };
-
+    
     if (input.description !== undefined && input.description !== '' && input.description !== null) {
         const descResult = sanitizeString(input.description);
         if (!descResult.isValid) {
@@ -85,7 +80,7 @@ export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
         }
         sanitized.description = descResult.sanitized;
     }
-
+    
     if (input.imageUrl !== undefined && input.imageUrl !== '' && input.imageUrl !== null) {
         const urlResult = sanitizeString(input.imageUrl);
         if (!urlResult.isValid || !urlResult.sanitized) {
@@ -93,7 +88,7 @@ export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
         }
         sanitized.imageUrl = urlResult.sanitized;
     }
-
+    
     if (input.previewImageUrl !== undefined && input.previewImageUrl !== '' && input.previewImageUrl !== null) {
         const urlResult = sanitizeString(input.previewImageUrl);
         if (!urlResult.isValid || !urlResult.sanitized) {
@@ -101,11 +96,25 @@ export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
         }
         sanitized.previewImageUrl = urlResult.sanitized;
     }
-
+    
+    if (input.location !== undefined && input.location !== '' && input.location !== null) {
+        if (typeof input.location !== 'string') {
+            errors.push('Location must be a string and cannot exceed 100 characters.');
+        } else if (input.location.length > 100) {
+            errors.push('Location must be a string and cannot exceed 100 characters.');
+        } else {
+            const locResult = sanitizeString(input.location);
+            if (!locResult.isValid) {
+                errors.push('Invalid location: ' + locResult.errors.join(', '));
+            }
+            sanitized.location = locResult.sanitized;
+        }
+    }
+    
     return {
         isValid: errors.length === 0,
         errors,
-        sanitized: errors.length === 0 ? sanitized : undefined
+        sanitized: errors.length === 0 ? sanitized as CompleteProfile : undefined
     };
 }
 

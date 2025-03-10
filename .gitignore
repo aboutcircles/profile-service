@@ -46,3 +46,6 @@ packages/tests/.contracts
 .env.*
 data
 profile-db.sqlite3
+
+# ai tools ignores
+.clinerules

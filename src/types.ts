@@ -11,6 +11,7 @@ export interface Profile {
   lastUpdatedAt: number;
   name: string;
   description?: string;
+  location?: string; // Optional location (max 100 characters)
   registeredName: string | null;
 }
 

@@ -1,0 +1,93 @@
+# Cline Rules: Profile Service
+
+This file contains project-specific patterns, conventions, and rules to follow when working with the Profile Service codebase.
+
+## Import Patterns
+- Keep imports sorted: third-party libraries first, then local modules
+- For local imports, do not include file extensions even though the TypeScript config uses NodeNext which would typically require them
+- For local imports, maintain the structure of:
+  1. Configuration imports
+  2. Utility imports
+  3. Type imports
+  4. Service imports
+
+## Code Style
+- Use single quotes for strings
+- Use 2-space indentation
+- Use camelCase for variables and functions
+- Use PascalCase for classes and interfaces
+- Use semicolons at the end of statements
+- Prefer async/await over promise chains
+- Use early returns to avoid deep nesting
+
+## Error Handling
+- Use the logError utility for error logging
+- Return descriptive error messages in API responses
+- Handle timeouts explicitly using the connect-timeout middleware
+- Check for req.timedout before processing requests
+
+## Validation Patterns
+- Use the ProfileValidator for validating profiles
+- Use the sanitizeProfile function from utils/sanitizer.ts for sanitizing user input
+- Always validate and sanitize all user inputs
+- Check for null, undefined, and empty strings separately
+
+## Repository Pattern Usage
+- Use prepared statements for database operations
+- Keep SQL queries in the repository layer
+- Use parameterized queries to prevent SQL injection
+- Provide descriptive error messages when queries fail
+
+## API Response Structure
+- Use consistent response formats:
+  - Success: Return the data directly (array or object)
+  - Error: Return `{ error: string }` or `{ errors: string[] }`
+- Set appropriate HTTP status codes:
+  - 200: Success
+  - 400: Bad Request (validation errors)
+  - 500: Server Error
+
+## TypeScript Usage
+- Prefer interfaces over types for object shapes
+- Use explicit typing rather than relying on inference
+- Use optional chaining and nullish coalescing when appropriate
+- Document functions with JSDoc comments
+
+## Testing Conventions
+- Write tests for all new functionality
+- Mock external dependencies
+- Use descriptive test names
+- Group tests logically
+- Skip image validation tests when not directly testing that functionality
+
+## Environment Variable Handling
+- Use the config object from config/config.ts
+- Do not access process.env directly in business logic
+- Provide default values for non-critical environment variables
+
+## Module-Specific Patterns
+
+### Profile Validation
+- First sanitize the input using sanitizeProfile
+- Then validate specific field constraints
+- For optional fields like location, only validate if they are provided
+- Return clear validation error messages
+
+### Storage Strategy
+- Abstract storage operations behind the PersistenceService interface
+- Use the strategy pattern to switch between storage backends
+- Cache commonly accessed profiles for performance
+- Handle IPFS/S3 errors gracefully
+
+### Search Implementation
+- Use SQLite FTS5 virtual tables for text search
+- Support partial matching with '%' wildcard or FTS prefix search
+- Provide options for exact and fuzzy matching
+- Allow searches to be optionally enriched with complete profiles
+
+### Location Field Guidelines
+- Max length: 100 characters
+- Optional field
+- Validate as string type
+- Support for prefix searching
+- Both exact and partial matches are supported in search

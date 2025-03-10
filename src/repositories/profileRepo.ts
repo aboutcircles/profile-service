@@ -5,14 +5,15 @@ import { Profile } from '../types';
 
 export class ProfileRepository {
   private insertOrUpdateProfileStmt = db.prepare(`
-      INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName)
-      VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName)
+      INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location)
+      VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location)
           ON CONFLICT(address) DO UPDATE
                                       SET lastUpdatedAt  = excluded.lastUpdatedAt,
                                       CID            = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
                                       name           = COALESCE(NULLIF(excluded.name, ''), profiles.name),
                                       description    = COALESCE(NULLIF(excluded.description, ''), profiles.description),
-                                      registeredName = COALESCE(excluded.registeredName, profiles.registeredName);
+                                      registeredName = COALESCE(excluded.registeredName, profiles.registeredName),
+                                      location = COALESCE(NULLIF(excluded.location, ''), profiles.location);
   `);
 
   private updateProfileStmt = db.prepare(`
@@ -21,7 +22,8 @@ export class ProfileRepository {
           CID            = COALESCE(NULLIF(@CID, ''), CID),
           name           = COALESCE(NULLIF(@name, ''), name),
           description    = COALESCE(NULLIF(@description, ''), description),
-          registeredName = COALESCE(@registeredName, registeredName)
+          registeredName = COALESCE(@registeredName, registeredName),
+          location = COALESCE(NULLIF(@location, ''), location)
       WHERE address = @address;
   `);
 
@@ -56,7 +58,7 @@ export class ProfileRepository {
     
     const sql = `
       SELECT 
-        p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+        p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location
       FROM profiles p
       WHERE p.address IN (${placeholders})
       LIMIT ?
@@ -77,15 +79,16 @@ export class ProfileRepository {
     address?: string;
     CID?: string;
     registeredName?: string;
+    location?: string;
   }): any[] {
     // If no FTS filters are given, run a simpler query directly on `profiles`.
-    const hasFts = !!(filters.name || filters.description);
+    const hasFts = !!(filters.name || filters.description || filters.location);
 
     if (!hasFts) {
       // -- CASE 1: No FTS-based filtering --
       let sql = `
         SELECT
-          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location
         FROM profiles p
       `;
 
@@ -104,6 +107,10 @@ export class ProfileRepository {
         conditions.push('p.registeredName = ?');
         params.push(filters.registeredName);
       }
+      if (filters.location) {
+        conditions.push('p.location LIKE ?');
+        params.push(`${filters.location}%`);
+      }
 
       if (conditions.length > 0) {
         sql += ' WHERE ' + conditions.join(' AND ');
@@ -118,7 +125,7 @@ export class ProfileRepository {
       // -- CASE 2: At least one FTS filter (name or description) --
       let sql = `
         SELECT
-          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName
+          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location
         FROM profiles_fts f
         JOIN profiles p ON p.rowid = f.rowid
         WHERE
@@ -150,6 +157,11 @@ export class ProfileRepository {
       if (filters.registeredName) {
         conditions.push('p.registeredName = ?');
         params.push(filters.registeredName);
+      }
+
+      if (filters.location) {
+        conditions.push('f.location MATCH ?');
+        params.push(filters.location + '*');
       }
 
       // Join all conditions with AND

@@ -2,7 +2,7 @@ import config from '../config/config';
 import {logError} from '../utils/logger';
 import sharp from "sharp";
 import {sanitizeProfile} from "../utils/sanitizer";
-import { IPFSDataProfile } from '../types';
+import { CompleteProfile, IPFSDataProfile, Profile } from '../types';
 
 export class ProfileValidator {
   /**
@@ -11,16 +11,21 @@ export class ProfileValidator {
    * @returns `true` if valid; otherwise `false`.
    */
   static async validateImage(dataUrl: string): Promise<boolean> {
-    const dataUrlPattern = /^data:image\/(png|jpeg|jpg|gif);base64,/;
+    if (!dataUrl) {
+      logError('Invalid data URL: empty', null);
+      return false;
+    }
+    
+    const dataUrlPattern = /^data:image\/(png|jpeg|jpg|gif);base64,?/;
     if (!dataUrlPattern.test(dataUrl)) {
-      logError('Invalid data URL pattern');
+      logError('Invalid data URL pattern', null);
       return false;
     }
 
     const base64Data = dataUrl.replace(dataUrlPattern, '');
     const buffer = Buffer.from(base64Data, 'base64');
     if (buffer.length > config.maxImageSizeKB * 1024) {
-      logError('Image size exceeds limit');
+      logError('Image size exceeds limit', null);
       return false;
     }
 
@@ -46,7 +51,7 @@ export class ProfileValidator {
    */
   static async validateProfile(profile: any): Promise<{
     errors: string[];
-    sanitizedProfile?: IPFSDataProfile;
+    sanitizedProfile?: CompleteProfile;
   }> {
     const sanitizeResult = sanitizeProfile(profile);
     if (!sanitizeResult.isValid || !sanitizeResult.sanitized) {
@@ -56,7 +61,7 @@ export class ProfileValidator {
     }
 
     const errors: string[] = [];
-    const sanitizedProfile = sanitizeResult.sanitized;
+    const sanitizedProfile = sanitizeResult.sanitized as CompleteProfile;
 
     // Name validation
     if (
@@ -66,6 +71,19 @@ export class ProfileValidator {
       errors.push(
         `Name is required and must be a string with a maximum length of ${config.maxNameLength} characters.`
       );
+    }
+    
+    // Location validation
+    if (profile.location !== undefined) {
+      if (typeof profile.location !== 'string') {
+        errors.push(
+          `Location must be a string and cannot exceed 100 characters.`
+        );
+      } else if (profile.location.length > 100) {
+        errors.push(
+          `Location must be a string and cannot exceed 100 characters.`
+        );
+      }
     }
 
     // Description validation

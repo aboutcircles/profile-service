@@ -35,7 +35,7 @@ const config = {
 
 config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;
 
-if (!config.databasePath) {
+if (!config.databasePath && process.env.NODE_ENV !== 'test') {
   throw new Error('DATABASE_PATH is required');
 }
 if (config.useS3) {
