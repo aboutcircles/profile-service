@@ -3,6 +3,8 @@ export interface IPFSDataProfile {
   description?: string;
   imageUrl?: string;
   previewImageUrl?: string;
+  location?: string;
+  geoLocation?: [number, number]; // [longitude, latitude]
 }
 
 export interface Profile {
@@ -12,6 +14,7 @@ export interface Profile {
   name: string;
   description?: string;
   registeredName: string | null;
+  location?: string;
+  geoLocation?: [number, number]; // [longitude, latitude]
 }
-
 export type CompleteProfile = Profile & IPFSDataProfile;
