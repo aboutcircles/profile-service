@@ -124,7 +124,7 @@ export class IndexerService {
       logError(`Failed to fetch profile data for CID: ${CID}`);
       return;
     }
-    logInfo(`Profile proccessed for CID: ${CID}, avatar: ${avatar}, name: ${profileData.name}`);
+    logInfo(`Profile processed for CID: ${CID}, avatar: ${avatar}, name: ${profileData.name}`);
 
     const profile: Profile = {
       address: avatar,
@@ -133,6 +133,8 @@ export class IndexerService {
       name: profileData.name,
       description: profileData.description,
       registeredName: null,
+      location: profileData.location || undefined,
+      geoLocation: profileData.geoLocation || undefined
     };
 
     this.profileRepository.upsertProfile(profile);

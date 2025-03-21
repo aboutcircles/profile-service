@@ -16,5 +16,8 @@ export interface Profile {
   registeredName: string | null;
   location?: string;
   geoLocation?: [number, number]; // [longitude, latitude]
+  longitude?: number;
+  latitude?: number;
 }
+
 export type CompleteProfile = Profile & IPFSDataProfile;

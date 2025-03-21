@@ -225,7 +225,9 @@ app.post('/search/addresses', (req, res) => {
             lastUpdatedAt: result.lastUpdatedAt,
             registeredName: result.registeredName,
             imageUrl: result.imageUrl,
-            previewImageUrl: result.previewImageUrl
+            previewImageUrl: result.previewImageUrl,
+            location: result.location,
+            geoLocation: result.geoLocation
           }));
           
           res.json({ results: sanitizedResults });
@@ -243,6 +245,8 @@ app.post('/search/addresses', (req, res) => {
         CID: result.CID,
         lastUpdatedAt: result.lastUpdatedAt,
         registeredName: result.registeredName,
+        location: result.location,
+        geoLocation: result.geoLocation
       }));
       
       res.json({ results: sanitizedResults });
@@ -255,9 +259,9 @@ app.post('/search/addresses', (req, res) => {
 
 app.get('/search', (req, res) => {
   try {
-    const {name, description, address, CID, registeredName, fetchComplete} = req.query;
+    const {name, description, address, CID, registeredName, location, fetchComplete} = req.query;
 
-    if (!name && !description && !address && !CID && !registeredName) {
+    if (!name && !description && !address && !CID && !registeredName && !location) {
       return res.status(400).json({error: 'At least one search parameter is required'});
     }
 
@@ -267,6 +271,7 @@ app.get('/search', (req, res) => {
       address,
       CID,
       registeredName,
+      location,
       fetchComplete
     });
 
@@ -282,7 +287,8 @@ app.get('/search', (req, res) => {
       description: sanitizeResult.sanitized.description,
       address: sanitizeResult.sanitized.address,
       CID: sanitizeResult.sanitized.CID,
-      registeredName: sanitizeResult.sanitized.registeredName
+      registeredName: sanitizeResult.sanitized.registeredName,
+      location: sanitizeResult.sanitized.location
     });
     
     if (!results) {
@@ -301,7 +307,9 @@ app.get('/search', (req, res) => {
             lastUpdatedAt: result.lastUpdatedAt,
             registeredName: result.registeredName,
             imageUrl: result.imageUrl,
-            previewImageUrl: result.previewImageUrl
+            previewImageUrl: result.previewImageUrl,
+            location: result.location,
+            geoLocation: result.geoLocation
           }));
           
           res.json(sanitizedResults);
@@ -319,6 +327,8 @@ app.get('/search', (req, res) => {
         CID: result.CID,
         lastUpdatedAt: result.lastUpdatedAt,
         registeredName: result.registeredName,
+        location: result.location,
+        geoLocation: result.geoLocation
       }));
       
       res.json(sanitizedResults);
