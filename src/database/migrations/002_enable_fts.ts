@@ -5,7 +5,6 @@ export default {
       CREATE VIRTUAL TABLE IF NOT EXISTS profiles_fts USING fts5(
         name,
         description,
-        location,
         content='profiles',
         content_rowid='rowid'
       );
@@ -13,8 +12,8 @@ export default {
 
     // 2) Seed the FTS table with existing data
     db.exec(`
-      INSERT INTO profiles_fts(rowid, name, description, location)
-      SELECT rowid, name, description, location FROM profiles;
+      INSERT INTO profiles_fts(rowid, name, description)
+      SELECT rowid, name, description FROM profiles;
     `);
 
     // 3) Create triggers so `profiles_fts` stays in sync with `profiles`
@@ -22,8 +21,8 @@ export default {
       CREATE TRIGGER IF NOT EXISTS profiles_ai
       AFTER INSERT ON profiles
       BEGIN
-        INSERT INTO profiles_fts(rowid, name, description, location)
-        VALUES (new.rowid, new.name, new.description, new.location);
+        INSERT INTO profiles_fts(rowid, name, description)
+        VALUES (new.rowid, new.name, new.description);
       END;
     `);
 
@@ -42,8 +41,7 @@ export default {
       BEGIN
         UPDATE profiles_fts
         SET name = new.name,
-            description = new.description,
-            location = new.location
+            description = new.description
         WHERE rowid = old.rowid;
       END;
     `);
