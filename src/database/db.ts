@@ -24,10 +24,7 @@ db.exec(`
         lastUpdatedAt INTEGER,
         name TEXT,
         description TEXT,
-        registeredName TEXT,
-        location TEXT,
-        longitude REAL,
-        latitude REAL
+        registeredName TEXT
     );
 `);
 
