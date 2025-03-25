@@ -202,15 +202,15 @@ export class ProfileRepository {
       if (filters.name) {
         conditions.push('f.name MATCH ?');
         // For prefix searching: add "*" at the end
-        params.push(filters.name + '*');
+        params.push(`"${filters.name}"*`);
       }
       if (filters.description) {
         conditions.push('f.description MATCH ?');
-        params.push(filters.description + '*');
+        params.push(`"${filters.description}"*`);
       }
       if (filters.location) {
         conditions.push('f.location MATCH ?');
-        params.push(filters.location + '*');
+        params.push(`"${filters.location}"*`);
       }
 
       // Non-FTS equality conditions (address, CID, registeredName)

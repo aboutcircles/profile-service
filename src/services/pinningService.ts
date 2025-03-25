@@ -126,7 +126,8 @@ export class PinningService implements PersistenceService {
 
     } catch (error) {
       logError('Failed to fetch profile from IPFS gateway', error);
-      throw new Error('Failed to fetch profile from IPFS gateway');
+      // @notice throwing error here causes the profiles service to fail
+      return undefined;
     }
 
     // Combine all chunks into a single Uint8Array
