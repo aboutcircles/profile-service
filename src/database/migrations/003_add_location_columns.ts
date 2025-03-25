@@ -22,7 +22,6 @@ export default {
     
     // Create an index on latitude and longitude for efficient geospatial queries
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_coordinates ON profiles(latitude, longitude)`).run();
-    
 
     // Save existing FTS data
     db.prepare('CREATE TEMPORARY TABLE fts_backup(rowid INTEGER PRIMARY KEY, name TEXT, description TEXT)').run();
@@ -36,14 +35,15 @@ export default {
     // Drop the existing FTS table
     db.prepare('DROP TABLE profiles_fts').run();
     
-    // Create a new FTS table with location column
+    // Create a new FTS table with location column and tokenizer configuration
     db.prepare(`
       CREATE VIRTUAL TABLE profiles_fts USING fts5(
-        name, 
-        description, 
-        location, 
-        content='profiles', 
-        content_rowid='rowid'
+        name,
+        description,
+        location,
+        content='profiles',
+        content_rowid='rowid',
+        tokenize="unicode61 tokenchars '-,'"
       )
     `).run();
     
@@ -86,7 +86,6 @@ export default {
       END
     `).run();
   
-    
-    console.log('Location-related migration completed successfully');
+    console.log('Location-related migration with improved symbol support completed successfully');
   }
 };
