@@ -93,6 +93,7 @@ When you `GET` a profile by its CID, the API will fetch and cache it (if not alr
   - `address`: exact match on the profile’s blockchain address.
   - `CID`: exact match on the stored IPFS CID.
   - `registeredName`: exact match on the profile’s short/registered name from the chain.
+  - `location`: partial text match in `location`.
   - `fetchComplete`: (boolean, optional) if set to `true`, fetches complete profile data from IPFS including images.
 
 When multiple parameters are provided, all of them are combined with a logical "AND".
@@ -299,6 +300,8 @@ Because this service also monitors Circles (Gnosis chain) contract events, there
 - **`description`**: Optional, up to 500 characters.
 - **`previewImageUrl`**: Must be a valid base64-encoded image. Limited to 256×256 px and ~150KB.
 - **`imageUrl`**: Must be an HTTP/HTTPS URL (max length 2000 chars).
+- **`location`**: Optional string with maximum length of 160 characters.
+- **`geoLocation`**: Optional array with exactly 2 numbers in format [longitude, latitude]. Longitude must be between -180 and 180. Latitude must be between -90 and 90.
 - **Overall Profile**: Total size limit is enforced. JSON is parsed; any unexpected or malicious data triggers blacklisting.
 
 ## Environment Variables / Configuration
