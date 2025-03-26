@@ -50,12 +50,7 @@ export class ProfileRepository {
       longitude: profile.geoLocation ? profile.geoLocation[0] : null,
       latitude: profile.geoLocation ? profile.geoLocation[1] : null
     };
-    
-    // Remove geoLocation from the object as it's not a column in the DB
-    if ('geoLocation' in dbProfile) {
-      delete (dbProfile as Profile).geoLocation;
-    }
-    
+
     this.insertOrUpdateProfileStmt.run(dbProfile);
   }
 
@@ -66,12 +61,7 @@ export class ProfileRepository {
       longitude: profile.geoLocation ? profile.geoLocation[0] : null,
       latitude: profile.geoLocation ? profile.geoLocation[1] : null
     };
-    
-    // Remove geoLocation from the object as it's not a column in the DB
-    if ('geoLocation' in dbProfile) {
-      delete (dbProfile as Profile).geoLocation;
-    }
-    
+
     this.updateProfileStmt.run(dbProfile);
   }
 

@@ -175,6 +175,7 @@ export class IndexerService {
         name: '', // Will be updated by UpdateMetadataDigest event
         description: '', // Will be updated by UpdateMetadataDigest event
         registeredName: name,
+        location: '', // Will be updated by UpdateMetadataDigest event
       };
       this.profileRepository.updateProfile(profile);
       logInfo(`Attempted to update registered name for ${avatar ?? organization ?? group}: ${name}`);
