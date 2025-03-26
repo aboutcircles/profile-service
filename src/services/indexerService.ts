@@ -138,7 +138,7 @@ export class IndexerService {
 
   private async processRegisteredName(event: any): Promise<void> {
     const { avatar, blockNumber, organization, group } = event;
-    logInfo(`Processing registered name event: ${event.$event} for ${avatar ?? organization ?? group} at block ${blockNumber}`, ...(event ?? {}));
+    logInfo(`Processing registered name event: ${event.$event} for ${avatar ?? organization ?? group} at block ${blockNumber}`, event);
     let name: string | null = null;
 
     switch(event?.$event) {
