@@ -3,6 +3,15 @@ import db from '../database/db';
 import config from '../config/config';
 import { Profile } from '../types';
 
+/**
+ * Helper function to sanitize FTS input.
+ * It removes double quotes which can break the intended quoting in the FTS MATCH clause.
+ * You can expand this function to remove or escape other characters if needed.
+ */
+function sanitizeFtsInput(input: string): string {
+  return input.replace(/"/g, '');
+}
+
 export class ProfileRepository {
   private insertOrUpdateProfileStmt = db.prepare(`
       INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location, longitude, latitude)
@@ -191,16 +200,19 @@ export class ProfileRepository {
       // FTS conditions first
       if (filters.name) {
         conditions.push('f.name MATCH ?');
-        // For prefix searching: add "*" at the end
-        params.push(`"${filters.name}"*`);
+        // Sanitize and append "*" for prefix searching
+        const sanitized = sanitizeFtsInput(filters.name);
+        params.push(`"${sanitized}"*`);
       }
       if (filters.description) {
         conditions.push('f.description MATCH ?');
-        params.push(`"${filters.description}"*`);
+        const sanitized = sanitizeFtsInput(filters.description);
+        params.push(`"${sanitized}"*`);
       }
       if (filters.location) {
         conditions.push('f.location MATCH ?');
-        params.push(`"${filters.location}"*`);
+        const sanitized = sanitizeFtsInput(filters.location);
+        params.push(`"${sanitized}"*`);
       }
 
       // Non-FTS equality conditions (address, CID, registeredName)
