@@ -102,6 +102,47 @@ export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
         sanitized.previewImageUrl = urlResult.sanitized;
     }
 
+    // Handle location (string)
+    if (input.location !== undefined && input.location !== '' && input.location !== null) {
+        const locationResult = sanitizeString(input.location);
+        if (!locationResult.isValid || !locationResult.sanitized) {
+            errors.push('Invalid location: ' + locationResult.errors.join(', '));
+        }
+
+        if(input.location.length > 160) {
+            errors.push('Invalid location string length (max. 160 characters)');
+        }
+
+        sanitized.location = locationResult.sanitized;
+    }
+
+    // Handle geoLocation ([number, number])
+    if (input.geoLocation !== undefined && input.geoLocation !== null) {
+        // Check if it's an array with exactly 2 elements
+        if (Array.isArray(input.geoLocation) && input.geoLocation.length === 2) {
+            const [longitude, latitude] = input.geoLocation;
+            
+            // Validate longitude (-180 to 180)
+            if (typeof longitude !== 'number' || longitude < -180 || longitude > 180) {
+                errors.push('Invalid geoLocation: longitude must be a number between -180 and 180');
+            }
+            
+            // Validate latitude (-90 to 90)
+            if (typeof latitude !== 'number' || latitude < -90 || latitude > 90) {
+                errors.push('Invalid geoLocation: latitude must be a number between -90 and 90');
+            }
+            
+            // Only assign if both values are valid
+            if (typeof longitude === 'number' && typeof latitude === 'number' && 
+                longitude >= -180 && longitude <= 180 && 
+                latitude >= -90 && latitude <= 90) {
+                sanitized.geoLocation = [longitude, latitude];
+            }
+        } else {
+            errors.push('Invalid geoLocation: must be an array with exactly 2 numbers [longitude, latitude]');
+        }
+    }
+
     return {
         isValid: errors.length === 0,
         errors,
@@ -120,6 +161,17 @@ export function sanitizeSearchParams(params: Record<string, any>): ValidationRes
             continue;
         }
         
+        // Handle location parameter specifically
+        if (key === 'location' && value !== undefined && value !== null) {
+            const result = sanitizeString(value.toString());
+            if (!result.isValid) {
+                errors.push(`Invalid location: ${result.errors.join(', ')}`);
+            }
+            sanitized[key] = result.sanitized;
+            continue;
+        }
+        
+        // Handle all other string parameters
         if (value !== undefined && value !== null) {
             const result = sanitizeString(value.toString());
             if (!result.isValid) {

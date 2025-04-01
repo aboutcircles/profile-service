@@ -16,7 +16,7 @@ db.exec(`
     );
 `);
 
-// Create initial profiles table
+// Create initial profiles table with location and coordinate columns
 db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (
         address TEXT PRIMARY KEY,
