@@ -72,40 +72,44 @@ export class IndexerService {
     }
 
     private async catchUpOnMissedEvents(fromBlock: number, toBlock: number): Promise<void> {
-        const events = await this.circlesData.getEvents(
-            null,
-            fromBlock + 1,
-            toBlock,
-            [
-                'CrcV2_UpdateMetadataDigest',
-                'CrcV2_RegisterShortName',
-                'CrcV2_RegisterGroup',
-                'CrcV2_RegisterOrganization'
-            ],
-            [],
-            true
-        );
+        try {
+            const events = await this.circlesData.getEvents(
+                null,
+                fromBlock + 1,
+                toBlock,
+                [
+                    'CrcV2_UpdateMetadataDigest',
+                    'CrcV2_RegisterShortName',
+                    'CrcV2_RegisterGroup',
+                    'CrcV2_RegisterOrganization'
+                ],
+                [],
+                true
+            );
 
-        logInfo('Catching up on missed events: ', events.length);
+            logInfo('Catching up on missed events: ', events.length);
 
-        for (const event of events) {
-            try {
-                if (event.$event === 'CrcV2_UpdateMetadataDigest') {
-                    if (this.initialization) {
-                        this.eventQueue.enqueue(event);
-                    } else {
-                        await this.processEvent(event);
+            for (const event of events) {
+                try {
+                    if (event.$event === 'CrcV2_UpdateMetadataDigest') {
+                        if (this.initialization) {
+                            this.eventQueue.enqueue(event);
+                        } else {
+                            await this.processEvent(event);
+                        }
+                    } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
+                        if (this.initialization) {
+                            this.nameEventQueue.enqueue(event);
+                        } else {
+                            await this.processRegisteredName(event);
+                        }
                     }
-                } else if (['CrcV2_RegisterShortName', 'CrcV2_RegisterGroup', 'CrcV2_RegisterOrganization'].includes(event.$event)) {
-                    if (this.initialization) {
-                        this.nameEventQueue.enqueue(event);
-                    } else {
-                        await this.processRegisteredName(event);
-                    }
+                } catch (e) {
+                    logError(`Couldn't process event:`, e);
                 }
-            } catch (e) {
-                console.error(`Couldn't process event:`, e);
             }
+        } catch (e) {
+            logError('Error fetching events: ', e);
         }
     }
 
