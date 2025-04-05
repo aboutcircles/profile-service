@@ -148,6 +148,7 @@ export class IndexerService {
                 fromBlock + 1,
                 toBlock,
                 [
+                    'CrcV1_UpdateMetadataDigest',
                     'CrcV2_UpdateMetadataDigest',
                     'CrcV2_RegisterShortName',
                     'CrcV2_RegisterGroup',
@@ -209,6 +210,7 @@ export class IndexerService {
     private async processSingleEvent(event: any) {
         try {
             switch (event.$event) {
+                case 'CrcV1_UpdateMetadataDigest':
                 case 'CrcV2_UpdateMetadataDigest':
                     await this.processUpdateMetadataEvent(event);
                     break;
@@ -237,6 +239,13 @@ export class IndexerService {
     private async processUpdateMetadataEvent(event: any) {
         const {avatar, metadataDigest, blockNumber, transactionHash} = event;
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
+
+        if (event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
+            // Check if there's already a (v2) profile for the address, if so, skip the event.
+            // Long term we might want to store both profiles. Right now v2 overrides v1.
+            console.log(`Skipping v1 profile for ${avatar} because there's a profile already`);
+            return;
+        }
 
         // remove "0x" prefix
         const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
