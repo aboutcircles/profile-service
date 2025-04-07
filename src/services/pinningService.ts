@@ -11,6 +11,8 @@ import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
 
 export class PinningService implements PersistenceService {
+  //@todo fix types
+  ipfs: any;
   profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
 
@@ -58,6 +60,138 @@ export class PinningService implements PersistenceService {
         reject(err);
       }
     });
+  }
+
+  // @todo improve comments / returns list of keys and cids to delete
+  async listItems(offset: number = 0, limit: number = 10): Promise<{ cid: string, key?: string, createdAt?: number }[]> {
+    logInfo('Listing pinned CIDs via S3 API');
+  
+    try {
+      const s3 = new AWS.S3({
+        endpoint: config.s3ApiUrl,
+        region: 'us-east-1',
+        signatureVersion: 'v4',
+        accessKeyId: config.s3Key,
+        secretAccessKey: config.s3Secret,
+      });
+  
+      const listParams: AWS.S3.ListObjectsV2Request = {
+        Bucket: config.s3Bucket as string,
+        MaxKeys: 1000 // Use maximum allowed to efficiently paginate
+      };
+  
+      const pinnedItems: { cid: string, key?: string, createdAt?: number }[] = [];
+      let truncated = true;
+      let continuationToken: string | undefined;
+      let itemsProcessed = 0;
+  
+      // Paginate through objects until we reach the desired offset + limit
+      while (truncated && pinnedItems.length < limit) {
+        if (continuationToken) {
+          listParams.ContinuationToken = continuationToken;
+        }
+        
+        const response = await s3.listObjectsV2(listParams).promise();
+        truncated = !!response.IsTruncated;
+        continuationToken = response.NextContinuationToken;
+        
+        if (response.Contents) {
+          // Get metadata for each object to extract CID
+          const objectDetailsPromises = response.Contents.map(async (object) => {
+            try {
+              const headParams = {
+                Bucket: config.s3Bucket as string,
+                Key: object.Key as string
+              };
+              
+              const metadata = await s3.headObject(headParams).promise();
+              const cid = metadata.Metadata?.['cid'] || metadata.Metadata?.['x-amz-meta-cid'];
+              if (cid) {
+                return {
+                  cid,
+                  key: object.Key,
+                  createdAt: object.LastModified ? Math.floor(object.LastModified.getTime() / 1000) : undefined
+                };
+              }
+              return null;
+            } catch (err) {
+              logError(`Failed to get metadata for object: ${object.Key}`, err);
+              return null;
+            }
+          });
+          
+          const objectDetails = await Promise.all(objectDetailsPromises);
+          const validObjects = objectDetails.filter(item => item !== null) as { cid: string, key?: string, createdAt?: number }[];
+          
+          // Apply offset and limit logic
+          if (itemsProcessed + validObjects.length > offset) {
+            // Calculate how many items to skip from this batch
+            const skipCount = Math.max(0, offset - itemsProcessed);
+            // Calculate how many items to take from this batch
+            const takeCount = Math.min(limit - pinnedItems.length, validObjects.length - skipCount);
+            
+            // Add relevant items to the result
+            pinnedItems.push(...validObjects.slice(skipCount, skipCount + takeCount));
+          }
+          
+          itemsProcessed += validObjects.length;
+          
+          // If we've processed enough items to satisfy the limit, break the loop
+          if (pinnedItems.length >= limit || !truncated) {
+            break;
+          }
+        }
+      }
+  
+      return pinnedItems;
+    } catch (err) {
+      logError('Failed to list pinned CIDs', err);
+      throw err;
+    }
+  }
+  // @todo update input
+  async unpinAll(itemsToDelete: {cid: string, key: string, createdAt?: number}[]): Promise<boolean> {
+    // @todo delete from cache
+    try {
+      const s3 = new AWS.S3({
+        endpoint: config.s3ApiUrl,
+        region: 'us-east-1',
+        signatureVersion: 'v4',
+        accessKeyId: config.s3Key,
+        secretAccessKey: config.s3Secret,
+      });
+
+      // Delete objects one by one
+      const deleteResults = [];
+      for (const item of itemsToDelete) {
+        const deleteParams = {
+          Bucket: config.s3Bucket as string,
+          Key: item.key
+        };
+
+        // Delete item from cache
+        await this.profileCache.delete(item.cid);
+        
+        try {
+          // Delete a single object and await its completion
+          const result = await s3.deleteObject(deleteParams).promise();
+          deleteResults.push({
+            Key: item.key,
+            Status: "DELETED",
+          });
+          // @todo remove from cache
+          logInfo(`Successfully deleted: ${item.key}`);
+        } catch (error) {
+          logError(`Error deleting object ${item.key}:`, error);
+        }
+      }
+
+      return deleteResults.length > 0;
+
+    } catch (err) {
+      logError(`Failed to unpin CID: ${itemsToDelete.length}`, err);
+      throw err;
+    }
   }
 
   initialize = async () => {

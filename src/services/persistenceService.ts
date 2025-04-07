@@ -3,6 +3,9 @@ import {LRUCache} from "lru-cache";
 import {IPFSDataProfile} from "../types";
 
 export interface PersistenceService {
+  // @todo fix types
+  ipfs?: any;
+  listItems?: any;
   /**
    * In-memory cache service for IPFSDataProfile objects.
    */
@@ -64,4 +67,7 @@ export interface PersistenceService {
    * Checks if the storage service is healthy.
    */
   isHealthy(): Promise<boolean>;
+  // @todo update types
+  // @todo add comments
+  unpinAll(itemsToDelete: string[] | {cid: string, key: string}[]): any;
 }

@@ -4,6 +4,10 @@ import config from '../config/config';
 import { Profile } from '../types';
 
 export class ProfileRepository {
+  // Common column selection for all queries
+  private readonly PROFILE_COLUMNS = 'p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location, p.longitude, p.latitude';
+
+  // Prepared statements
   private insertOrUpdateProfileStmt = db.prepare(`
       INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location, longitude, latitude)
       VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location, @longitude, @latitude)
@@ -39,30 +43,45 @@ export class ProfileRepository {
       DELETE FROM profiles WHERE lastUpdatedAt >= ?;
   `);
 
+  // Helper methods for data transformation
+  private convertToDbProfile(profile: Profile): any {
+    return {
+      ...profile,
+      longitude: profile.geoLocation ? profile.geoLocation[0] : null,
+      latitude: profile.geoLocation ? profile.geoLocation[1] : null
+    };
+  }
+
+  private mapRowToProfile(row: any): Profile {
+    const profile: Profile = {
+      address: row.address,
+      CID: row.CID,
+      lastUpdatedAt: row.lastUpdatedAt,
+      name: row.name,
+      description: row.description,
+      registeredName: row.registeredName,
+      location: row.location
+    };
+    
+    // Add geoLocation only if both longitude and latitude exist
+    if (row.longitude !== null && row.latitude !== null) {
+      profile.geoLocation = [row.longitude, row.latitude];
+    }
+    
+    return profile;
+  }
+
+  // Repository methods
   getLastProcessedBlock(): number {
     return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
   }
 
   upsertProfile(profile: Profile): void {
-    // Create a database-ready object with longitude and latitude as separate columns
-    const dbProfile = {
-      ...profile,
-      longitude: profile.geoLocation ? profile.geoLocation[0] : null,
-      latitude: profile.geoLocation ? profile.geoLocation[1] : null
-    };
-
-    this.insertOrUpdateProfileStmt.run(dbProfile);
+    this.insertOrUpdateProfileStmt.run(this.convertToDbProfile(profile));
   }
 
   updateProfile(profile: Profile): void {
-    // Create a database-ready object with longitude and latitude as separate columns
-    const dbProfile = {
-      ...profile,
-      longitude: profile.geoLocation ? profile.geoLocation[0] : null,
-      latitude: profile.geoLocation ? profile.geoLocation[1] : null
-    };
-
-    this.updateProfileStmt.run(dbProfile);
+    this.updateProfileStmt.run(this.convertToDbProfile(profile));
   }
 
   deleteDataOlderThanBlock(blockNumber: number): void {
@@ -75,35 +94,39 @@ export class ProfileRepository {
     const placeholders = addresses.map(() => '?').join(',');
     
     const sql = `
-      SELECT 
-        p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location, p.longitude, p.latitude
+      SELECT ${this.PROFILE_COLUMNS}
       FROM profiles p
       WHERE p.address IN (${placeholders})
       LIMIT ?
     `;
     
     const results = db.prepare(sql).all([...addresses, config.maxListSize]);
-    
-    // Convert DB results to Profile objects with geoLocation array
-    return results.map((row: any) => {
-      const profile: Profile = {
-        address: row.address,
-        CID: row.CID,
-        lastUpdatedAt: row.lastUpdatedAt,
-        name: row.name,
-        description: row.description,
-        registeredName: row.registeredName,
-        location: row.location
-      };
-      
-      // Add geoLocation only if both longitude and latitude exist
-      if (row.longitude !== null && row.latitude !== null) {
-        profile.geoLocation = [row.longitude, row.latitude];
-      }
-      
-      return profile;
-    });
+    return results.map(this.mapRowToProfile);
   }
+
+  checkProfilesCidsExist(cids: string[]): boolean[] {
+    if (!cids.length) return [];
+
+    const placeholders = cids.map(cid => `('${cid}')`).join(',');
+    
+    const sql = `
+    WITH input_cids(cid) AS (
+        VALUES
+            ${placeholders}
+    )
+    SELECT
+        CAST(profiles.cid IS NOT NULL AS INTEGER) AS cidExists
+    FROM
+        input_cids
+    LEFT JOIN
+        profiles ON input_cids.cid = profiles.cid
+    LIMIT ?
+    `;
+
+    const results: any[] = db.prepare(sql).all([config.maxListSize]);
+
+    return results.map(result => !!result.cidExists);
+}
 
   /**
    * searchProfiles:
@@ -118,80 +141,49 @@ export class ProfileRepository {
     CID?: string;
     registeredName?: string;
     location?: string;
-  }): any[] {
-    // If no FTS filters are given, run a simpler query directly on `profiles`.
+  }): Profile[] {
     const hasFts = !!(filters.name || filters.description || filters.location);
+    const conditions: string[] = [];
+    const params: any[] = [];
 
+    // Build common filter conditions
+    if (filters.address) {
+      conditions.push('p.address LIKE ?');
+      params.push(`${filters.address}%`);
+    }
+    if (filters.CID) {
+      conditions.push('p.CID = ?');
+      params.push(filters.CID);
+    }
+    if (filters.registeredName) {
+      conditions.push('p.registeredName = ?');
+      params.push(filters.registeredName);
+    }
+
+    let sql;
+    
     if (!hasFts) {
       // -- CASE 1: No FTS-based filtering --
-      let sql = `
-        SELECT
-          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location, p.longitude, p.latitude
+      sql = `
+        SELECT ${this.PROFILE_COLUMNS}
         FROM profiles p
       `;
-
-      const conditions: string[] = [];
-      const params: any[] = [];
-
-      if (filters.address) {
-        conditions.push('p.address LIKE ?');
-        params.push(`${filters.address}%`);
-      }
-      if (filters.CID) {
-        conditions.push('p.CID = ?');
-        params.push(filters.CID);
-      }
-      if (filters.registeredName) {
-        conditions.push('p.registeredName = ?');
-        params.push(filters.registeredName);
-      }
 
       if (conditions.length > 0) {
         sql += ' WHERE ' + conditions.join(' AND ');
       }
-
-      // Add a limit placeholder (better-sqlite3 supports LIMIT ?)
-      sql += ' LIMIT ?';
-      params.push(config.maxListSize);
-
-      const results = db.prepare(sql).all(params);
-      
-      // Convert DB results to Profile objects with geoLocation array
-      return results.map((row: any) => {
-        const profile: Profile = {
-          address: row.address,
-          CID: row.CID,
-          lastUpdatedAt: row.lastUpdatedAt,
-          name: row.name,
-          description: row.description,
-          registeredName: row.registeredName,
-          location: row.location
-        };
-        
-        // Add geoLocation only if both longitude and latitude exist
-        if (row.longitude !== null && row.latitude !== null) {
-          profile.geoLocation = [row.longitude, row.latitude];
-        }
-        
-        return profile;
-      });
     } else {
-      // -- CASE 2: At least one FTS filter (name or description) --
-      let sql = `
-        SELECT
-          p.address, p.name, p.description, p.CID, p.lastUpdatedAt, p.registeredName, p.location, p.longitude, p.latitude
+      // -- CASE 2: At least one FTS filter (name, description, or location) --
+      sql = `
+        SELECT ${this.PROFILE_COLUMNS}
         FROM profiles_fts f
         JOIN profiles p ON p.rowid = f.rowid
         WHERE
       `;
 
-      const conditions: string[] = [];
-      const params: any[] = [];
-
-      // FTS conditions first
+      // Add FTS conditions
       if (filters.name) {
         conditions.push('f.name MATCH ?');
-        // For prefix searching: add "*" at the end
         params.push(`"${filters.name}"*`);
       }
       if (filters.description) {
@@ -203,48 +195,15 @@ export class ProfileRepository {
         params.push(`"${filters.location}"*`);
       }
 
-      // Non-FTS equality conditions (address, CID, registeredName)
-      if (filters.address) {
-        conditions.push('p.address LIKE ?');
-        params.push(`${filters.address}%`);
-      }
-      if (filters.CID) {
-        conditions.push('p.CID = ?');
-        params.push(filters.CID);
-      }
-      if (filters.registeredName) {
-        conditions.push('p.registeredName = ?');
-        params.push(filters.registeredName);
-      }
-
       // Join all conditions with AND
       sql += conditions.join(' AND ');
-
-      // Add a limit placeholder
-      sql += ' LIMIT ?';
-      params.push(config.maxListSize);
-
-      const results = db.prepare(sql).all(params);
-      
-      // Convert DB results to Profile objects with geoLocation array
-      return results.map((row: any): Profile => {
-        const profile: Profile = {
-          address: row.address,
-          CID: row.CID,
-          lastUpdatedAt: row.lastUpdatedAt,
-          name: row.name,
-          description: row.description,
-          registeredName: row.registeredName,
-          location: row.location
-        };
-        
-        // Add geoLocation only if both longitude and latitude exist
-        if (row.longitude !== null && row.latitude !== null) {
-          profile.geoLocation = [row.longitude, row.latitude];
-        }
-        
-        return profile;
-      });
     }
+
+    // Add limit to all queries
+    sql += ' LIMIT ?';
+    params.push(config.maxListSize);
+
+    const results = db.prepare(sql).all(params);
+    return results.map(row => this.mapRowToProfile(row));
   }
 }

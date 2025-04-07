@@ -7,7 +7,8 @@ import {PersistenceService} from "./persistenceService";
 import {ProfileValidator} from "./profileValidator";
 
 export class KuboService implements PersistenceService {
-  private ipfs: any;
+  // @todo fix types
+  public ipfs: any;
 
   profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
@@ -37,6 +38,73 @@ export class KuboService implements PersistenceService {
     const result = await this.ipfs.add(buffer);
     await this.ipfs.pin.add(result.cid);
     return result.cid.toString();
+  }
+  // @todo make enum for types
+  async unpinAll(cids: string[]): Promise<boolean> {
+
+    try {
+      // Prepare batch unpinning options based on pin type
+      // Use rmAll to process all CIDs in a batch
+      let unpinnedCounter = 0;
+      // @todo do not apply recursive unpin to all
+      for await (const result of this.ipfs.pin.rmAll(cids, { recursive: true })) {
+        logInfo(`Unpinned: ${result}`);
+        unpinnedCounter++;
+      }
+      
+      // Run garbage collection after batch operation is complete
+      console.log("Running garbage collection...");
+      for await (const gcResult of this.ipfs.repo.gc({ quiet: false })) {
+        logInfo(gcResult);
+      }
+      
+      // Delete items from cache
+      const cacheResults = await Promise.all(
+        cids.map(cid => this.profileCache.delete(cid))
+      );
+      
+      // Report final repo size
+      logInfo(`Successfully unpinned ${unpinnedCounter} CIDs`);
+      
+      return unpinnedCounter === cids.length;
+
+    } catch (error) {
+      logError(`Error unpinning:`, error);
+      return false;
+    }
+  }
+
+  async listItems(offset = 0, limit = 10): Promise<{cid: string, type: string}[]> {
+    try {
+      // Array to store pinned items
+      const pinnedItems = [];
+      let skipped = 0;
+
+      // Iterate through pinned items
+      for await (const pin of this.ipfs.pin.ls()) {
+        // Skip items until we reach the offset
+        if (skipped < offset) {
+          skipped++;
+          continue;
+        }
+  
+        // Add item to the list
+        pinnedItems.push({
+          cid: pin.cid.toString(), // CID of the pinned item
+          type: pin.type, // Type of pin (direct, recursive, etc.)
+        });
+
+        // Break if we've reached the limit
+        if (pinnedItems.length >= limit) {
+          break;
+        }
+      }
+
+      return pinnedItems;
+    } catch (error) {
+      logError('Error retrieving pinned IPFS items:', error);
+      return [];
+    }
   }
 
   initialize = async () => {
@@ -88,7 +156,7 @@ export class KuboService implements PersistenceService {
       }
     } catch (error) {
       logError('Failed to fetch profile from IPFS', error);
-      throw new Error('Failed to fetch profile from IPFS');
+      return undefined;
     }
 
     let profile: any;

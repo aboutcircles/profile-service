@@ -12,6 +12,7 @@ import {sanitizeSearchParams} from './utils/sanitizer';
 import {PinningService} from "./services/pinningService";
 import {ProfileValidator} from "./services/profileValidator";
 import {PersistenceService} from "./services/persistenceService";
+import {CleanupService} from "./services/cleanupService";
 import { Profile, IPFSDataProfile, CompleteProfile } from './types';
 
 const app = express();
@@ -25,9 +26,11 @@ app.use(errorHandler);
 const persistenceService: PersistenceService = config.useS3 ? new PinningService() : new KuboService();
 let profileRepo: ProfileRepository = new ProfileRepository();
 let indexerService = new IndexerService(persistenceService, profileRepo);
+let cleanupService = new CleanupService(persistenceService, profileRepo);
 
 (async () => {
-  await indexerService.initialize();
+  //await indexerService.initialize();
+  await cleanupService.initialize();
 })();
 
 const haltOnTimedout = (req: Request, res: Response, next: () => void) => {

@@ -39,7 +39,7 @@ export class CacheService<T> {
         this.cache.set(key, value);
     }
 
-    public delete(key: string): void {
-        this.cache.delete(key);
+    public delete(key: string): boolean {
+        return this.cache.delete(key);
     }
 }
