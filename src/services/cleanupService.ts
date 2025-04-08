@@ -1,16 +1,15 @@
 import config from './../config/config';
-
 import {logInfo} from '../utils/logger';
-
 import {ProfileRepository} from '../repositories/profileRepo';
 import {PersistenceService} from "./persistenceService";
 
 export class CleanupService {
   private initialization = true;
-  private chunkSize = 2;
+  private cleanupInProgress = false;
+  private chunkSize = 100;
 
   constructor(private persistenceService: PersistenceService, private profileRepository: ProfileRepository) {
-    logInfo('constructing CleanupService');
+    logInfo('Constructing CleanupService');
   }
 
   initialize = async () => {
@@ -20,92 +19,61 @@ export class CleanupService {
     // @todo add filter by last modified
     // the filter is only applicable to the s3
     // @todo setup cron procedure
-    if(config.useS3) {
-      await this.cleanupS3();
-    } else {
-      await this.cleanupKubo();
-    }
+    await this.cleanup();
   };
   // @todo check item type
   // @todo check if we have an offset issue that after the items deletion the offset should not jump
-  cleanupS3 = async () => {
-    let offset = 0;
-    let hasMoreItems = true;
-    
-    while (hasMoreItems) {
-      // Step 1: Get a chunk of items with their keys and CIDs
-      const items = await this.persistenceService.listItems(offset, this.chunkSize);
-      
-      if (items.length === 0) {
-        hasMoreItems = false;
-        break;
-      }
 
-      console.log(`Processing chunk of ${items.length} items (offset: ${offset})...`);
-      
-      // Step 2: Extract CIDs from the items to check existence
-      const cids = items.map((item:any) => item.cid);
-      // Step 3: Check which CIDs exist in the profiles database
-      const existResults = await this.profileRepository.checkProfilesCidsExist(cids);
-      
-      // Step 4: Find keys of items whose CIDs don't exist in the profiles database
-      const keysToUnpin = items
-        .filter((_: any, index: number) => !existResults[index])
-        .filter((item: any) => item.key !== undefined); // Filter out undefined keys
-      //console.log(keysToUnpin)
-      // Only attempt to unpin if there are keys to unpin
-      if (keysToUnpin.length > 0) {
-        const unpinResult = await this.persistenceService.unpinAll(keysToUnpin);
-
-        if(!unpinResult) {
-          // @todo update error description
-          console.log("Error unpinning keys:", keysToUnpin);
-        }
-      }
-      
-      // Step 5: Move to the next chunk
-      offset += this.chunkSize;
-      
-      // Optional: Add a small delay to avoid overwhelming the system
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    console.log(`Cleanup completed.`);
-  }
-
-  cleanupKubo = async () => {
-    let cidsBatch: string[] = [];
+  cleanup = async () => {
+    logInfo('Cleanup started');
+    this.cleanupInProgress = true;
+    let cidsBatch: {cid: string}[] = [];
     let stats = {
       total: 0,
       removed: 0
     }
-
+    
     const pinStream = this.persistenceService.streamPins();
-
+    
     for await (const pin of pinStream) {
       // Step 1: Add CIDs to the batch
-      cidsBatch.push(pin.cid.toString());
+      cidsBatch.push(pin);
       stats.total++;
-
-      if(cidsBatch.length >= this.chunkSize) {
-        // Step 2: Check which CIDs utilized in the profiles database
-        const existResults = await this.profileRepository.checkProfilesCidsExist(cidsBatch);
-        const unpinItems = cidsBatch
-          .filter((_: any, index:number) => !existResults[index]);
-
-        // Step 4: Unpin CIDs that are not used in the profiles database
-        if(unpinItems.length) {
-          const unpinItemsCount = await this.persistenceService.unpinAll(unpinItems);
-          stats.removed += unpinItemsCount;
-        }
+      
+      if (cidsBatch.length >= this.chunkSize) {
+        // Process the current batch
+        stats.removed += await this.processBatch(cidsBatch);
+        
         // Add a small delay to avoid overwhelming the system
         await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Step 4: Empty the batch for the next iteration
+        
+        // Empty the batch for the next iteration
         cidsBatch = [];
       }
     }
-
-    console.log(`IPFS cleanup completed. Processed ${stats.total} items, removed ${stats.removed} unused CIDs.`);
+    
+    // Process any remaining items in the batch
+    stats.removed += await this.processBatch(cidsBatch);
+    
+    console.log(`Cleanup completed. Processed ${stats.total} items, removed ${stats.removed} unused CIDs.`);
+    this.cleanupInProgress = false;
   }
+  // @todo improve comment 
+  // helper funciton 
+  private processBatch = async (batch: {cid: string}[]): Promise<number> => {
+    let unpinItemsCount = 0;
+      if (batch.length !== 0) {
+      
+      const CIDs = batch.map(pin => pin.cid);
+      const existResults = await this.profileRepository.checkProfilesCidsExist(CIDs);
+      const unpinItems = batch
+        .filter((_: any, index: number) => !existResults[index]);
+        
+      if (unpinItems.length) {
+        unpinItemsCount = await this.persistenceService.unpinAll(unpinItems);
+      }
+    }
+
+    return unpinItemsCount;
+  };
 }

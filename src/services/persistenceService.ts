@@ -69,6 +69,6 @@ export interface PersistenceService {
   isHealthy(): Promise<boolean>;
   // @todo fix types
   // @todo add comments
-  unpinAll(itemsToDelete: string[] | {cid: string, key: string}[]): any;
+  unpinAll(itemsToDelete: string[] | {cid: string, key: string}[] | {cid: string}[]): any;
   streamPins?: any;
 }

@@ -40,7 +40,9 @@ export class KuboService implements PersistenceService {
     return result.cid.toString();
   }
   // @todo make enum for types
-  async unpinAll(cids: string[]): Promise<number> {
+  async unpinAll(pins: {cid: string}[]): Promise<number> {
+    const cids = pins.map(pin => pin.cid);
+
     try {
       // Prepare batch unpinning options based on pin type
       // Use rmAll to process all CIDs in a batch
@@ -51,7 +53,6 @@ export class KuboService implements PersistenceService {
       }
 
       // Run garbage collection after batch operation is complete
-      console.log("Running IPFS garbage collection...");
       for await (const gcResult of this.ipfs.repo.gc({ quiet: false })) {
         if(gcResult.err) {
           logInfo(`Error on garbage collection for item: ${gcResult.cid}`);
@@ -68,7 +69,7 @@ export class KuboService implements PersistenceService {
       return unpinnedCounter;
 
     } catch (error) {
-      logError(`Error unpinning:`, error);
+      logError('Failed to unpin CIDs:', error);
       return 0;
     }
   }
@@ -76,7 +77,10 @@ export class KuboService implements PersistenceService {
   async *streamPins() {
     try {
       for await (const pin of this.ipfs.pin.ls()) {
-        yield pin;
+        // @todo doublecheck if it works correctly
+        yield {
+          cid: pin.cid.toString()
+        };
       }
     } catch (error) {
       logError('Error streaming IPFS pins:', error);

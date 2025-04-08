@@ -61,11 +61,9 @@ export class PinningService implements PersistenceService {
       }
     });
   }
-
-  // @todo improve comments / returns list of keys and cids to delete
-  async listItems(offset: number = 0, limit: number = 10): Promise<{ cid: string, key?: string, createdAt?: number }[]> {
-    logInfo('Listing pinned CIDs via S3 API');
-  
+  // @todo update types
+  // @todo doublecheck the logic
+  async *streamPins(): AsyncGenerator<{ cid: string, key?: string, createdAt?: number }> {    
     try {
       const s3 = new AWS.S3({
         endpoint: config.s3ApiUrl,
@@ -74,19 +72,17 @@ export class PinningService implements PersistenceService {
         accessKeyId: config.s3Key,
         secretAccessKey: config.s3Secret,
       });
-  
+      
       const listParams: AWS.S3.ListObjectsV2Request = {
         Bucket: config.s3Bucket as string,
         MaxKeys: 1000 // Use maximum allowed to efficiently paginate
       };
-  
-      const pinnedItems: { cid: string, key?: string, createdAt?: number }[] = [];
+      
       let truncated = true;
       let continuationToken: string | undefined;
-      let itemsProcessed = 0;
-  
-      // Paginate through objects until we reach the desired offset + limit
-      while (truncated && pinnedItems.length < limit) {
+      
+      // Paginate through objects
+      while (truncated) {
         if (continuationToken) {
           listParams.ContinuationToken = continuationToken;
         }
@@ -96,8 +92,8 @@ export class PinningService implements PersistenceService {
         continuationToken = response.NextContinuationToken;
         
         if (response.Contents) {
-          // Get metadata for each object to extract CID
-          const objectDetailsPromises = response.Contents.map(async (object) => {
+          // Process each object sequentially instead of using Promise.all
+          for (const object of response.Contents) {
             try {
               const headParams = {
                 Bucket: config.s3Bucket as string,
@@ -106,53 +102,36 @@ export class PinningService implements PersistenceService {
               
               const metadata = await s3.headObject(headParams).promise();
               const cid = metadata.Metadata?.['cid'] || metadata.Metadata?.['x-amz-meta-cid'];
+              
               if (cid) {
-                return {
+                yield {
                   cid,
                   key: object.Key,
                   createdAt: object.LastModified ? Math.floor(object.LastModified.getTime() / 1000) : undefined
                 };
               }
-              return null;
             } catch (err) {
               logError(`Failed to get metadata for object: ${object.Key}`, err);
-              return null;
+              // Continue with next object
             }
-          });
-          
-          const objectDetails = await Promise.all(objectDetailsPromises);
-          const validObjects = objectDetails.filter(item => item !== null) as { cid: string, key?: string, createdAt?: number }[];
-          
-          // Apply offset and limit logic
-          if (itemsProcessed + validObjects.length > offset) {
-            // Calculate how many items to skip from this batch
-            const skipCount = Math.max(0, offset - itemsProcessed);
-            // Calculate how many items to take from this batch
-            const takeCount = Math.min(limit - pinnedItems.length, validObjects.length - skipCount);
-            
-            // Add relevant items to the result
-            pinnedItems.push(...validObjects.slice(skipCount, skipCount + takeCount));
-          }
-          
-          itemsProcessed += validObjects.length;
-          
-          // If we've processed enough items to satisfy the limit, break the loop
-          if (pinnedItems.length >= limit || !truncated) {
-            break;
           }
         }
+        
+        // If no more pages, break the loop
+        if (!truncated) {
+          break;
+        }
       }
-  
-      return pinnedItems;
     } catch (err) {
       logError('Failed to list pinned CIDs', err);
       throw err;
     }
   }
+
   // @todo update input
-  async unpinAll(itemsToDelete: {cid: string, key: string, createdAt?: number}[]): Promise<boolean> {
-    // @todo delete from cache
+  async unpinAll(pins: {cid: string, key: string, createdAt?: number}[]): Promise<number> {
     try {
+      let unpinnedCounter = 0;
       const s3 = new AWS.S3({
         endpoint: config.s3ApiUrl,
         region: 'us-east-1',
@@ -162,35 +141,29 @@ export class PinningService implements PersistenceService {
       });
 
       // Delete objects one by one
-      const deleteResults = [];
-      for (const item of itemsToDelete) {
+      for (const pin of pins) {
         const deleteParams = {
           Bucket: config.s3Bucket as string,
-          Key: item.key
+          Key: pin.key
         };
-
-        // Delete item from cache
-        await this.profileCache.delete(item.cid);
         
         try {
           // Delete a single object and await its completion
-          const result = await s3.deleteObject(deleteParams).promise();
-          deleteResults.push({
-            Key: item.key,
-            Status: "DELETED",
-          });
-          // @todo remove from cache
-          logInfo(`Successfully deleted: ${item.key}`);
+          await s3.deleteObject(deleteParams).promise();
+
+          // Delete item from cache
+          await this.profileCache.delete(pin.cid);
+          unpinnedCounter++;
         } catch (error) {
-          logError(`Error deleting object ${item.key}:`, error);
+          logError(`Error deleting object ${pin.key} - ${pin.cid}:`, error);
         }
       }
+      logInfo(`Unpinned CIDs: ${pins.map(pin => pin.cid).join(', ')}`);
+      return unpinnedCounter;
 
-      return deleteResults.length > 0;
-
-    } catch (err) {
-      logError(`Failed to unpin CID: ${itemsToDelete.length}`, err);
-      throw err;
+    } catch (error) {
+      logError('Failed to unpin CIDs:', error);
+      return 0;
     }
   }
 
