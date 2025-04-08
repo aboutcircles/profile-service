@@ -28,6 +28,8 @@ export class IndexerService {
      */
     private processingQueue = false;
 
+    private websocketUnsubscriber: any;
+
     /**
      * Reorg handling
      */
@@ -60,7 +62,8 @@ export class IndexerService {
         this.circlesData = new CirclesData(circlesRpc);
 
         // 1) Start the subscription in "buffer mode" (so we lose nothing).
-        this.startWebSocketSubscription();
+        this.bufferLiveEvents()
+            .then(() => logInfo('Subscribed to live events. Buffering new events...'));
 
         // 2) Figure out what block was last processed and the current chain tip.
         const latestBlock = await this.fetchLatestBlock();
@@ -75,6 +78,8 @@ export class IndexerService {
 
         // 5) Flush any subscription events that arrived during the catch-up.
         //    Now these "live" events are guaranteed to be from strictly newer blocks.
+        logInfo('Flushing buffered subscription events...');
+      
         for (const event of this.subscriptionBuffer) {
             this.eventQueue.enqueue(event);
         }
@@ -82,7 +87,8 @@ export class IndexerService {
         await this.processQueue();
 
         // 6) Now that the backlog is done, direct any newly arriving subscription events straight to the queue.
-        this.switchSubscriptionToQueue();
+        this.processLiveEvents()
+            .then(() => logInfo('Subscribed to live events. Processing new events...'));
 
         // Finally, watch for reorgs
         this.reorgListening();
@@ -95,24 +101,24 @@ export class IndexerService {
      * `subscriptionBuffer`. We'll flush them after we've processed
      * all older events.
      */
-    private async startWebSocketSubscription(): Promise<void> {
+    private async bufferLiveEvents(): Promise<void> {
         const events = await this.circlesData.subscribeToEvents();
-        events.subscribe((event: any) => {
+        this.websocketUnsubscriber = events.subscribe((event: any) => {
             // During the catch-up, simply store them so we don't lose them.
             this.subscriptionBuffer.push(event);
         });
-        logInfo('Started subscription in "buffer mode"');
     }
 
     /**
      * After we're finished catching up, we "switch" the subscription to
      * enqueue events directly in real-time, rather than stashing them.
      */
-    private async switchSubscriptionToQueue(): Promise<void> {
-        // For demonstration, we resubscribe with a new callback that enqueues events in real time.
-        // Adjust as needed for your subscription library if it doesn't allow unsub/resub easily.
+    private async processLiveEvents(): Promise<void> {
+        if (this.websocketUnsubscriber) {
+            this.websocketUnsubscriber();
+        }
         const events = await this.circlesData.subscribeToEvents();
-        events.subscribe((event: any) => {
+        this.websocketUnsubscriber = events.subscribe((event: any) => {
             this.enqueueEvent(event); // now we enqueue live events in real time
         });
 
@@ -143,6 +149,7 @@ export class IndexerService {
                 fromBlock + 1,
                 toBlock,
                 [
+                    'CrcV1_UpdateMetadataDigest',
                     'CrcV2_UpdateMetadataDigest',
                     'CrcV2_RegisterShortName',
                     'CrcV2_RegisterGroup',
@@ -204,6 +211,7 @@ export class IndexerService {
     private async processSingleEvent(event: any) {
         try {
             switch (event.$event) {
+                case 'CrcV1_UpdateMetadataDigest':
                 case 'CrcV2_UpdateMetadataDigest':
                     await this.processUpdateMetadataEvent(event);
                     break;
@@ -233,26 +241,20 @@ export class IndexerService {
         const {avatar, metadataDigest, blockNumber, transactionHash} = event;
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
 
+        if (event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
+            // Check if there's already a (v2) profile for the address, if so, skip the event.
+            // Long term we might want to store both profiles. Right now v2 overrides v1.
+            console.log(`Skipping v1 profile for ${avatar} because there's a profile already`);
+            return;
+        }
+
         // remove "0x" prefix
         const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
-
+      
         // Attempt to fetch IPFS data
         const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout / 2);
         if (!profileData) {
             logError(`Failed to fetch profile data for CID: ${CID}`);
-            // We could still upsert partial info if we want:
-            // upsert a row with just address, CID, blockNumber, name=null, etc.
-            const partialProfile: Profile = {
-                address: avatar,
-                CID,
-                lastUpdatedAt: blockNumber,
-                name: null,
-                description: undefined,
-                registeredName: null,
-                location: undefined,
-                geoLocation: undefined
-            };
-            this.profileRepository.upsertProfile(partialProfile);
             return;
         }
 
@@ -312,8 +314,6 @@ export class IndexerService {
 
         if (name) {
             const address = avatar ?? organization ?? group;
-
-            // Switch from updateProfile(...) => upsertProfile(...)
             const profile: Profile = {
                 address,
                 CID: '', // updated by a future UpdateMetadataDigest event
@@ -329,9 +329,7 @@ export class IndexerService {
 
             this.profileRepository.upsertProfile(profile);
 
-            logInfo(
-                `Upserted registered name for ${address}: ${name} (block ${blockNumber})`
-            );
+            logInfo(`Upserted registered name for ${address}: ${name} (block ${blockNumber})`);
         }
     }
 
