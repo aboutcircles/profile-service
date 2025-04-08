@@ -79,6 +79,7 @@ export class IndexerService {
         // 5) Flush any subscription events that arrived during the catch-up.
         //    Now these "live" events are guaranteed to be from strictly newer blocks.
         logInfo('Flushing buffered subscription events...');
+      
         for (const event of this.subscriptionBuffer) {
             this.eventQueue.enqueue(event);
         }
@@ -249,7 +250,7 @@ export class IndexerService {
 
         // remove "0x" prefix
         const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
-
+      
         // Attempt to fetch IPFS data
         const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout / 2);
         if (!profileData) {
@@ -313,7 +314,6 @@ export class IndexerService {
 
         if (name) {
             const address = avatar ?? organization ?? group;
-
             const profile: Profile = {
                 address,
                 CID: '', // updated by a future UpdateMetadataDigest event
