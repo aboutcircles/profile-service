@@ -12,15 +12,6 @@ function sanitizeFtsInput(input: string): string {
     return input.replace(/"/g, '');
 }
 
-/**
- * Helper function to sanitize FTS input.
- * It removes double quotes which can break the intended quoting in the FTS MATCH clause.
- * You can expand this function to remove or escape other characters if needed.
- */
-function sanitizeFtsInput(input: string): string {
-  return input.replace(/"/g, '');
-}
-
 export class ProfileRepository {
     private insertOrUpdateProfileStmt = db.prepare(`
         INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location, longitude,
