@@ -67,7 +67,8 @@ export interface PersistenceService {
    * Checks if the storage service is healthy.
    */
   isHealthy(): Promise<boolean>;
-  // @todo update types
+  // @todo fix types
   // @todo add comments
   unpinAll(itemsToDelete: string[] | {cid: string, key: string}[]): any;
+  streamPins?: any;
 }
