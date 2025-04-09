@@ -5,6 +5,12 @@ import config from '../config/config';
 import {CacheService} from "../utils/cache";
 import {PersistenceService} from "./persistenceService";
 import {ProfileValidator} from "./profileValidator";
+import {
+  BlacklistedCidError,
+  FetchTimeoutError,
+  InvalidJSONError, ProfileValidationError,
+  ResponseSizeExceededError
+} from "./fetchFromOriginErrors";
 
 export class KuboService implements PersistenceService {
   private ipfs: any;
@@ -54,65 +60,75 @@ export class KuboService implements PersistenceService {
     return this.blackList.get(cid) !== undefined;
   };
 
-  // ----------------------------------
-  // Removed validateImage and validateProfile
-  // and replaced them with calls to ProfileValidator.
-  // ----------------------------------
-
   fetchProfileFromOrigin = async (
-    cid: string,
-    timeoutInMs: number
-  ): Promise<IPFSDataProfile | undefined> => {
-    logInfo(`Fetching profile for CID: ${cid} from origin (IPFS).`);
+      cid: string,
+      timeoutInMs: number
+  ): Promise<IPFSDataProfile> => {
+    logInfo(`Fetching profile for CID: ${cid} from IPFS (Kubo).`);
 
+    // 1. Blacklist check
     if (this.isBlackListed(cid)) {
-      throw new Error(
-        `The CID ${cid} is blacklisted because it failed validation previously`
+      throw new BlacklistedCidError(
+          `The CID ${cid} is blacklisted because it failed validation previously`
       );
     }
 
     let data = Buffer.alloc(0);
+
     try {
+      // Kubo's `cat` can take a timeout option in ms
       const stream: AsyncIterable<Uint8Array> = this.ipfs.cat(cid, {
         timeout: timeoutInMs
       });
 
       for await (const chunk of stream) {
+        // 2. Size check
         if (data.length + chunk.length > config.maxProfileSize) {
           this.addToBlackList(cid);
-          throw new Error(
-            `Response size exceeds ${config.maxProfileSize} byte limit`
+          throw new ResponseSizeExceededError(
+              `Response size exceeds ${config.maxProfileSize} byte limit`
           );
         }
+
         data = Buffer.concat([data, chunk]);
       }
-    } catch (error) {
-      logError('Failed to fetch profile from IPFS', error);
-      throw new Error('Failed to fetch profile from IPFS');
+    } catch (error: any) {
+      if (
+          error.name.toLowerCase().includes("timeout") ||
+          (typeof error.message === 'string' &&
+              (error.message.toLowerCase().includes('timeout') || error.message.toLowerCase().includes('deadline')))
+      ) {
+        // TODO: What's the correct error.name and/or message?
+        throw new FetchTimeoutError(`Timed out after ${timeoutInMs}ms for CID ${cid}`);
+      }
+      // Otherwise, treat it as a general error
+      logError(`Failed to fetch profile from IPFS for CID ${cid}`, error);
+      throw error;
     }
 
+    // 4. Parse JSON
     let profile: any;
     try {
       profile = JSON.parse(data.toString('utf-8'));
-    } catch (error) {
+    } catch (err) {
       this.addToBlackList(cid);
-      throw new Error('Invalid JSON data');
+      throw new InvalidJSONError(`Invalid JSON data for CID ${cid}`);
     }
 
-    // Now use ProfileValidator to validate the profile
+    // 5. Validate the profile
     const validation = await ProfileValidator.validateProfile(profile);
     if (validation.errors.length) {
       this.addToBlackList(cid);
-      throw new Error(validation.errors.join(', '));
+      throw new ProfileValidationError(`Profile validation failed for CID ${cid}: ` + validation.errors.join(', '));
     }
 
-    return validation.sanitizedProfile;
+    return validation.sanitizedProfile!;
   };
 
   getCachedProfile = async (
     cid: string,
     timeoutInMs: number
-  ): Promise<IPFSDataProfile | undefined> => {
+  ): Promise<IPFSDataProfile> => {
     return this.profileCache.get(cid, timeoutInMs);
   };
 }

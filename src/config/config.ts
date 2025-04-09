@@ -4,8 +4,8 @@ dotenv.config();
 
 const config = {
   port: process.env.PORT || 3000,
-  rpcEndpoint: process.env.RPC_ENDPOINT || 'https://rpc.aboutcircles.com/',
-  wsEndpoint: process.env.WS_ENDPOINT || 'wss://rpc.aboutcircles.com/ws/',
+  rpcEndpoint: process.env.RPC_ENDPOINT || 'http://localhost:8545/',
+  wsEndpoint: process.env.WS_ENDPOINT || 'ws://localhost:8545/ws/',
   databasePath: process.env.DATABASE_PATH,
   ipfs: {
     host: process.env.IPFS_HOST || 'localhost',
@@ -17,7 +17,7 @@ const config = {
   descriptionLength: parseInt(process.env.DESCRIPTION_LENGTH || '500'),
   imageUrlLength: parseInt(process.env.IMAGE_URL_LENGTH || '2000'),
   imageDimension: parseInt(process.env.IMAGE_DIMENSION || '256'),
-  defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
+  defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '500'),
   maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
   maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
   cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '25000'),
@@ -31,6 +31,7 @@ const config = {
   maxAddressesSearchSize: parseInt(process.env.MAX_ADDRESSES_SEARCH_SIZE || '1000'),
   defaultAddressesSearchLimit: parseInt(process.env.DEFAULT_ADDRESSES_SEARCH_LIMIT || '50'),
   maxProfileSize: 0,
+  maxProfileFetchRetries: 3
 };
 
 config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;

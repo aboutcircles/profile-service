@@ -7,3 +7,6 @@ export const logWarn = (...logs: string[]) => {
 export const logInfo = (...logs: string[]) => {
   console.log(...logs);
 };
+export const logDebug = (...logs: string[]) => {
+  console.log(...logs);
+};

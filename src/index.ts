@@ -97,7 +97,7 @@ app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
   try {
     const fetchPromises = validCidArray.map(cid => {
       if (cid.isValid && !cid.isBlackListed) {
-        return persistenceService.getCachedProfile(cid.cid, config.defaultTimeout / 2)
+        return persistenceService.getCachedProfile(cid.cid, config.defaultTimeout)
       } else if (!cid.isValid) {
         return Promise.reject(new Error(`Invalid CID: ${cid.cid}`));
       } else {
@@ -130,7 +130,7 @@ app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
   logInfo(`Received request for profile with CID: ${req.query.cid}`);
 
   try {
-    const profile: IPFSDataProfile | null | undefined = await persistenceService.getCachedProfile(req.query.cid as string, config.defaultTimeout - 30);
+    const profile: IPFSDataProfile | null | undefined = await persistenceService.getCachedProfile(req.query.cid as string, config.defaultTimeout);
     if (req.timedout) return;
     return res.json(profile);
   } catch (error) {
@@ -215,7 +215,7 @@ app.post('/search/addresses', (req, res) => {
 
     // If fetchComplete is true, fetch complete profiles from IPFS
     if (sanitizeResult.sanitized.fetchComplete === 'true') {
-      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout / 2)
+      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout)
         .then(completeResults => {
           const sanitizedResults = completeResults.map((result: CompleteProfile) => ({
             name: result.name,
@@ -297,7 +297,7 @@ app.get('/search', (req, res) => {
 
     // If fetchComplete is true, fetch complete profiles from IPFS
     if (sanitizeResult.sanitized.fetchComplete === 'true') {
-      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout / 2)
+      fetchCompleteProfiles(results, persistenceService, config.defaultTimeout)
         .then(completeResults => {
           const sanitizedResults = completeResults.map(result => ({
             name: result.name,
