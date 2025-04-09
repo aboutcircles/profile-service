@@ -31,6 +31,9 @@ const config = {
   maxAddressesSearchSize: parseInt(process.env.MAX_ADDRESSES_SEARCH_SIZE || '1000'),
   defaultAddressesSearchLimit: parseInt(process.env.DEFAULT_ADDRESSES_SEARCH_LIMIT || '50'),
   maxProfileSize: 0,
+  isCleanupEnabled: process.env.CLEANUP_ENABLED === 'true',
+  cleanupBatchSize: parseInt(process.env.CLEANUP_BATCH_SIZE || '100'),
+  cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '30'),
 };
 
 config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;

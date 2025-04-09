@@ -1,11 +1,8 @@
 import {CacheService} from "../utils/cache";
 import {LRUCache} from "lru-cache";
-import {IPFSDataProfile} from "../types";
+import {IPFSDataProfile, Pin} from "../types";
 
 export interface PersistenceService {
-  // @todo fix types
-  ipfs?: any;
-  listItems?: any;
   /**
    * In-memory cache service for IPFSDataProfile objects.
    */
@@ -67,8 +64,21 @@ export interface PersistenceService {
    * Checks if the storage service is healthy.
    */
   isHealthy(): Promise<boolean>;
-  // @todo fix types
-  // @todo add comments
-  unpinAll(itemsToDelete: string[] | {cid: string, key: string}[] | {cid: string}[]): any;
-  streamPins?: any;
+
+  /**
+   * Unpins multiple content identifiers from the IPFS node or an S3 bucket.
+   * 
+   * @param pins - Array of Pin objects containing the CIDs and storage keys to unpin.
+   * @returns A promise that resolves to the number of successfully unpinned items.
+   */
+  unpinAll(pinsToDelete: Pin[]): Promise<number>;
+
+  /**
+   * Creates an async generator that streams all pins and metadata from the IPFS node or an S3 bucket.
+   * 
+   * @param lastCleanUp - UNIX time when the last cleanup procedure finished.
+   * @returns An AsyncGenerator that yields Pin objects containing CIDs.
+   * @throws Error if the streaming operation fails.
+   */
+  streamPins(lastCleanUp?: number): AsyncGenerator<Pin>
 }

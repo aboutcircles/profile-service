@@ -21,3 +21,11 @@ export interface Profile {
 }
 
 export type CompleteProfile = Profile & IPFSDataProfile;
+
+export type Pin = {
+  cid: string;
+  type?: string;
+  key?: string; // filebase (S3 key)
+  createdAt?: number; // UNIX time of the record creation
+}
+

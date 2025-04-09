@@ -3,7 +3,7 @@ import axios from 'axios';
 import {v4 as uuidv4} from 'uuid';
 import {logError, logInfo} from '../utils/logger';
 import {LRUCache} from 'lru-cache';
-import {IPFSDataProfile} from '../types';
+import {IPFSDataProfile, Pin} from '../types';
 import config from '../config/config';
 import {CacheService} from '../utils/cache';
 import {PersistenceService} from './persistenceService';
@@ -11,8 +11,6 @@ import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
 
 export class PinningService implements PersistenceService {
-  //@todo fix types
-  ipfs: any;
   profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
 
@@ -61,9 +59,8 @@ export class PinningService implements PersistenceService {
       }
     });
   }
-  // @todo update types
-  // @todo doublecheck the logic
-  async *streamPins(): AsyncGenerator<{ cid: string, key?: string, createdAt?: number }> {    
+
+  async *streamPins(lastCleanUp: number): AsyncGenerator<Pin> {
     try {
       const s3 = new AWS.S3({
         endpoint: config.s3ApiUrl,
@@ -95,20 +92,23 @@ export class PinningService implements PersistenceService {
           // Process each object sequentially instead of using Promise.all
           for (const object of response.Contents) {
             try {
-              const headParams = {
-                Bucket: config.s3Bucket as string,
-                Key: object.Key as string
-              };
-              
-              const metadata = await s3.headObject(headParams).promise();
-              const cid = metadata.Metadata?.['cid'] || metadata.Metadata?.['x-amz-meta-cid'];
-              
-              if (cid) {
-                yield {
-                  cid,
-                  key: object.Key,
-                  createdAt: object.LastModified ? Math.floor(object.LastModified.getTime() / 1000) : undefined
+              const lastModifiedTime = object.LastModified ? Math.floor(object.LastModified.getTime() / 1000) : 0;
+              if(lastModifiedTime <= lastCleanUp) {
+                const headParams: AWS.S3.HeadObjectRequest = {
+                  Bucket: config.s3Bucket as string,
+                  Key: object.Key as string
                 };
+                
+                const metadata = await s3.headObject(headParams).promise();
+                const cid = metadata.Metadata?.['cid'] || metadata.Metadata?.['x-amz-meta-cid'];
+                
+                if (cid) {
+                  yield {
+                    cid,
+                    key: object.Key,
+                    createdAt: object.LastModified ? lastModifiedTime : undefined
+                  };
+                }
               }
             } catch (err) {
               logError(`Failed to get metadata for object: ${object.Key}`, err);
@@ -128,8 +128,7 @@ export class PinningService implements PersistenceService {
     }
   }
 
-  // @todo update input
-  async unpinAll(pins: {cid: string, key: string, createdAt?: number}[]): Promise<number> {
+  async unpinAll(pins: Pin[]): Promise<number> {
     try {
       let unpinnedCounter = 0;
       const s3 = new AWS.S3({
@@ -142,9 +141,9 @@ export class PinningService implements PersistenceService {
 
       // Delete objects one by one
       for (const pin of pins) {
-        const deleteParams = {
+        const deleteParams: AWS.S3.Types.DeleteObjectRequest = {
           Bucket: config.s3Bucket as string,
-          Key: pin.key
+          Key: pin.key as string
         };
         
         try {

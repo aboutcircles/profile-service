@@ -13,6 +13,7 @@
     "@types/connect-timeout": "^0.0.39",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/node-cron": "^3.0.11",
     "typescript": "^5.5.3"
   },
   "engines": {
@@ -32,12 +33,14 @@
     "bs58": "^6.0.0",
     "connect-timeout": "^1.9.0",
     "cors": "^2.8.5",
+    "cron": "^4.1.4",
     "dotenv": "^16.4.7",
     "express": "5.0.0",
     "isomorphic-dompurify": "^2.20.0",
     "kubo-rpc-client": "^5.0.2",
     "lru-cache": "^11.0.0",
     "multihashes": "^4.0.3",
+    "node-cron": "^3.0.3",
     "sharp": "^0.33.4",
     "sqlstring": "^2.3.3",
     "uuid": "^11.0.5",

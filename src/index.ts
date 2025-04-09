@@ -29,8 +29,10 @@ let indexerService = new IndexerService(persistenceService, profileRepo);
 let cleanupService = new CleanupService(persistenceService, profileRepo);
 
 (async () => {
-  //await indexerService.initialize();
-  await cleanupService.initialize();
+  await indexerService.initialize();
+
+  if(config.isCleanupEnabled)
+    await cleanupService.initialize();
 })();
 
 const haltOnTimedout = (req: Request, res: Response, next: () => void) => {

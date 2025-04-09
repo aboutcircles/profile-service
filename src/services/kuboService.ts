@@ -1,20 +1,19 @@
 import {LRUCache} from 'lru-cache';
 import {logError, logInfo} from '../utils/logger';
-import {IPFSDataProfile} from '../types';
+import {IPFSDataProfile, Pin} from '../types';
 import config from '../config/config';
 import {CacheService} from "../utils/cache";
 import {PersistenceService} from "./persistenceService";
 import {ProfileValidator} from "./profileValidator";
 
 export class KuboService implements PersistenceService {
-  // @todo fix types
   public ipfs: any;
 
   profileCache: CacheService<IPFSDataProfile>;
   blackList = new LRUCache<string, any>({max: 100000});
 
   constructor() {
-    logInfo('constructing KuboService');
+    logInfo('Constructing KuboService');
 
     this.profileCache = new CacheService<IPFSDataProfile>(
       config.cacheMaxSize,
@@ -39,15 +38,15 @@ export class KuboService implements PersistenceService {
     await this.ipfs.pin.add(result.cid);
     return result.cid.toString();
   }
-  // @todo make enum for types
-  async unpinAll(pins: {cid: string}[]): Promise<number> {
+
+  async unpinAll(pins: Pin[]): Promise<number> {
     const cids = pins.map(pin => pin.cid);
 
     try {
       // Prepare batch unpinning options based on pin type
       // Use rmAll to process all CIDs in a batch
       let unpinnedCounter = 0;
-      // @todo do not apply recursive unpin to all
+      // @dev We apply `recursive` removal for simplicity for all pin types
       for await (const result of this.ipfs.pin.rmAll(cids, { recursive: true })) {
         unpinnedCounter++;
       }
@@ -64,20 +63,18 @@ export class KuboService implements PersistenceService {
         cids.map(cid => this.profileCache.delete(cid))
       );
 
-      // Report final repo size
+      // Report unpinned items
       logInfo(`Unpinned CIDs: ${cids.join(', ')}`);
       return unpinnedCounter;
-
     } catch (error) {
       logError('Failed to unpin CIDs:', error);
       return 0;
     }
   }
 
-  async *streamPins() {
+  async *streamPins(): AsyncGenerator<Pin> {
     try {
       for await (const pin of this.ipfs.pin.ls()) {
-        // @todo doublecheck if it works correctly
         yield {
           cid: pin.cid.toString()
         };
