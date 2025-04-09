@@ -1,5 +1,5 @@
 export interface IPFSDataProfile {
-  name: string;
+  name: string | null;
   description?: string;
   imageUrl?: string;
   previewImageUrl?: string;
@@ -11,7 +11,7 @@ export interface Profile {
   address: string;
   CID: string;
   lastUpdatedAt: number;
-  name: string;
+  name: string | null;
   description?: string;
   registeredName: string | null;
   location?: string;
