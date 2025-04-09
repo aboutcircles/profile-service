@@ -8,7 +8,8 @@ import {Pin} from '../types'
 export class CleanupService {
   private cronJob!: CronJob;
   private cleanupInProgress: boolean = false;
-  private lastCleanUp: number = 0; // UNIX time of the last cleanup
+  // UNIX time of the last cleanup, init value = current time - cleanupInterval
+  private lastCleanUp: number = Math.floor(Date.now() / 1000) - (config.cleanupInterval * 60);
 
   constructor(private persistenceService: PersistenceService, private profileRepository: ProfileRepository) {
     logInfo('Constructing CleanupService');
