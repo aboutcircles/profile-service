@@ -1,4 +1,3 @@
-import {v4 as uuidv4} from 'uuid';
 import {logInfo, logWarn} from '../utils/logger';
 import {LRUCache} from 'lru-cache';
 import {IPFSDataProfile} from '../types';
@@ -14,6 +13,7 @@ import {
     ProfileValidationError,
     ResponseSizeExceededError
 } from "./fetchFromOriginErrors";
+import {v4 as uuidv4} from "uuid";
 
 export class PinningService implements PersistenceService {
     profileCache: CacheService<IPFSDataProfile>;
