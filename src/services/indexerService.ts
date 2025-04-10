@@ -238,7 +238,7 @@ export class IndexerService {
             switch (envelope.event.$event) {
                 case 'CrcV1_UpdateMetadataDigest':
                 case 'CrcV2_UpdateMetadataDigest':
-                    await this.processUpdateMetadataEvent(envelope.event);
+                    await this.processUpdateMetadataEvent(envelope);
                     break;
 
                 case 'CrcV2_RegisterShortName':
@@ -311,11 +311,24 @@ export class IndexerService {
     /**
      * Processes the "UpdateMetadataDigest" event, updating the profile in SQLite.
      */
-    private async processUpdateMetadataEvent(event: any) {
-        const {avatar, metadataDigest, blockNumber, transactionHash} = event;
+    private async processUpdateMetadataEvent(envelope: EventEnvelope) {
+        const {avatar, metadataDigest, blockNumber, transactionHash} = envelope.event;
+
+        if (envelope.retries > 0) {
+            // This is an old event which is retried.
+            // Ignore it if the account already has newer data.
+            const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
+            if (latestBlock > envelope.event.blockNumber) {
+                logInfo(
+                    `Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
+                );
+                return;
+            }
+        }
+
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
 
-        if (event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
+        if (envelope.event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
             // Check if there's already a (v2) profile for the address, if so, skip the event.
             // Long term we might want to store both profiles. Right now v2 overrides v1.
             console.log(`Skipping v1 profile for ${avatar} because there's a profile already`);
