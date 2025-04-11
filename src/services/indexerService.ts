@@ -324,6 +324,8 @@ export class IndexerService {
                 );
                 return;
             }
+
+            logInfo(`Retrying event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}).. Attempt ${envelope.retries}.`);
         }
 
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
