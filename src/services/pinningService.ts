@@ -1,7 +1,4 @@
-import FormData from 'form-data';
-import axios from 'axios';
-import {v4 as uuidv4} from 'uuid';
-import {logError, logInfo} from '../utils/logger';
+import {logError, logInfo, logWarn} from '../utils/logger';
 import {LRUCache} from 'lru-cache';
 import {IPFSDataProfile} from '../types';
 import config from '../config/config';
@@ -9,178 +6,180 @@ import {CacheService} from '../utils/cache';
 import {PersistenceService} from './persistenceService';
 import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
+import {
+    BlacklistedCidError,
+    FetchTimeoutError,
+    GatewayError,
+    InvalidJSONError,
+    ProfileValidationError,
+    ResponseSizeExceededError
+} from "./fetchFromOriginErrors";
+import {v4 as uuidv4} from "uuid";
 
 export class PinningService implements PersistenceService {
-  profileCache: CacheService<IPFSDataProfile>;
-  blackList = new LRUCache<string, any>({max: 100000});
+    profileCache: CacheService<IPFSDataProfile>;
+    blackList = new LRUCache<string, any>({max: 100000});
 
-  constructor() {
-    logInfo('Constructing FilebaseGatewayPersistenceService');
+    constructor() {
+        logInfo('Constructing FilebaseGatewayPersistenceService');
 
-    this.profileCache = new CacheService<IPFSDataProfile>(
-      config.cacheMaxSize,
-      this.fetchProfileFromOrigin.bind(this)
-    );
+        this.profileCache = new CacheService<IPFSDataProfile>(
+            config.cacheMaxSize,
+            this.fetchProfileFromOrigin.bind(this)
+        );
 
-    this.initialize();
-  }
-
-  isHealthy(): Promise<boolean> {
-    // implement your own health check if needed
-    throw new Error('Method not implemented.');
-  }
-
-  async pin(profile: IPFSDataProfile): Promise<string> {
-    return new Promise((resolve, reject) => {
-      try {
-        const s3 = new AWS.S3({
-          endpoint: config.s3ApiUrl,
-          region: 'us-east-1',
-          signatureVersion: 'v4',
-          accessKeyId: config.s3Key,
-          secretAccessKey: config.s3Secret,
-        });
-
-        const jsonBuffer = Buffer.from(JSON.stringify(profile), 'utf-8');
-        const params = {
-          Bucket: <string>config.s3Bucket,
-          Key: uuidv4(),
-          Body: jsonBuffer
-        };
-
-        const request = s3.putObject(params);
-        request.on('httpHeaders', (statusCode, headers) => {
-          resolve(headers['x-amz-meta-cid']);
-        });
-        request.send();
-      } catch (err) {
-        console.error(`Error uploading profile ${JSON.stringify(profile)} to Filebase:`, err);
-        reject(err);
-      }
-    });
-  }
-
-  initialize = async () => {
-    logInfo('Initializing FilebaseGatewayPersistenceService');
-  };
-
-  addToBlackList = (cid: string) => {
-    logInfo(`Adding CID to blacklist: ${cid}`);
-    this.blackList.set(cid, true);
-  };
-
-  isBlackListed = (cid: string) => {
-    return this.blackList.get(cid) !== undefined;
-  };
-
-  fetchProfileFromOrigin = async (
-    cid: string,
-    timeoutInMs: number
-  ): Promise<IPFSDataProfile | undefined> => {
-    logInfo(`Fetching profile for CID: ${cid} from IPFS gateway.`);
-
-    if (this.isBlackListed(cid)) {
-      throw new Error(
-        `The CID ${cid} is blacklisted because it failed validation previously`
-      );
+        this.initialize();
     }
 
-    const gatewayUrl = `${config.ipfsGateway}${cid}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutInMs);
+    isHealthy(): Promise<boolean> {
+        // implement your own health check if needed
+        throw new Error('Method not implemented.');
+    }
 
-    let chunks: Uint8Array[] = [];
-    let totalBytes = 0;
+    async pin(profile: IPFSDataProfile): Promise<string> {
+        return new Promise((resolve, reject) => {
+            try {
+                const s3 = new AWS.S3({
+                    endpoint: config.s3ApiUrl,
+                    region: 'us-east-1',
+                    signatureVersion: 'v4',
+                    accessKeyId: config.s3Key,
+                    secretAccessKey: config.s3Secret,
+                });
 
-    try {
-      const response = await fetch(gatewayUrl, {signal: controller.signal});
-      clearTimeout(timeoutId);
+                const jsonBuffer = Buffer.from(JSON.stringify(profile), 'utf-8');
+                const params = {
+                    Bucket: <string>config.s3Bucket,
+                    Key: uuidv4(),
+                    Body: jsonBuffer
+                };
 
-      if (!response.ok) {
-        throw new Error(`Gateway returned status ${response.status}`);
-      }
+                const request = s3.putObject(params);
+                request.on('httpHeaders', (statusCode, headers) => {
+                    resolve(headers['x-amz-meta-cid']);
+                });
+                request.send();
+            } catch (err) {
+                logError(`Error uploading profile ${JSON.stringify(profile)} to Filebase:`, err);
+                reject(err);
+            }
+        });
+    }
 
-      // Stream the body
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No readable stream in fetch response');
-      }
+    initialize = async () => {
+        logInfo('Initializing FilebaseGatewayPersistenceService');
+    };
 
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
+    addToBlackList = (cid: string) => {
+        logInfo(`Adding CID to blacklist: ${cid}`);
+        this.blackList.set(cid, true);
+    };
 
-        if (!value) continue; // Occasionally value could be undefined
+    isBlackListed = (cid: string) => {
+        return this.blackList.get(cid) !== undefined;
+    };
 
-        totalBytes += value.byteLength;
+    fetchProfileFromOrigin = async (
+        cid: string,
+        timeoutInMs: number
+    ): Promise<IPFSDataProfile> => {
+        logInfo(`Fetching profile with CID: ${cid} from IPFS gateway.`);
 
-        // If we exceed the limit, abort ASAP
-        if (totalBytes > config.maxProfileSize) {
-          this.addToBlackList(cid);
-          controller.abort(); // will cause an error below
-          throw new Error(`Response size exceeds ${config.maxProfileSize} byte limit`);
+        if (this.isBlackListed(cid)) {
+            throw new BlacklistedCidError(
+                `The CID ${cid} is blacklisted because it failed validation previously`
+            );
         }
 
-        chunks.push(value);
-      }
+        const gatewayUrl = `${config.ipfsGateway}${cid}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            logWarn(`Aborting fetch for CID ${cid} due to timeout (${timeoutInMs}ms).`);
+            controller.abort();
+        }, timeoutInMs);
 
-    } catch (error) {
-      logError('Failed to fetch profile from IPFS gateway', error);
-      // @notice throwing error here causes the profiles service to fail
-      return undefined;
-    }
+        let chunks: Uint8Array[] = [];
+        let totalBytes = 0;
 
-    // Combine all chunks into a single Uint8Array
-    let data = new Uint8Array(totalBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      data.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
+        try {
+            const response = await fetch(gatewayUrl, {signal: controller.signal});
+            clearTimeout(timeoutId);
 
-    // Now parse JSON
-    let profile: any;
-    try {
-      profile = JSON.parse(Buffer.from(data).toString('utf-8'));
-    } catch (error) {
-      this.addToBlackList(cid);
-      throw new Error('Invalid JSON data');
-    }
+            // If not OK (like 404 or 500), throw
+            if (!response.ok) {
+                throw new GatewayError(
+                    `Gateway returned status ${response.status}: ${response.statusText}`,
+                    response.status
+                );
+            }
 
-    const validation = await ProfileValidator.validateProfile(profile);
-    if (validation.errors.length) {
-      this.addToBlackList(cid);
-      throw new Error(validation.errors.join(', '));
-    }
+            // Ensure there's a readable stream
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new GatewayError('No readable stream in fetch response', response.status);
+            }
 
-    return validation.sanitizedProfile;
-  };
+            // Stream out the body in chunks
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                if (!value) continue; // occasionally undefined
 
-  getCachedProfile = async (
-    cid: string,
-    timeoutInMs: number
-  ): Promise<IPFSDataProfile | undefined> => {
-    return this.profileCache.get(cid, timeoutInMs);
-  };
+                totalBytes += value.byteLength;
 
-  pinCid = async (cid: string): Promise<void> => {
-    logInfo(`Pinning CID: ${cid} via pinning service`);
+                // If we exceed the limit, abort & throw
+                if (totalBytes > config.maxProfileSize) {
+                    this.addToBlackList(cid);
+                    controller.abort();
+                    throw new ResponseSizeExceededError(
+                        `Response size exceeds ${config.maxProfileSize} byte limit`
+                    );
+                }
+                chunks.push(value);
+            }
 
-    try {
-      const response = await fetch(config.s3ApiUrl!, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.s3Key}:${config.s3Secret}`,
-        },
-        body: JSON.stringify({cid}),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to pin: ${await response.text()}`);
-      }
-    } catch (err) {
-      logError('Failed to pin via pinning service', err);
-      throw err;
-    }
-  };
+        } catch (error: any) {
+            // If the request was aborted due to timeout, throw a specialized error
+            if (error.name === 'AbortError') {
+                logWarn(`Fetch for CID ${cid} aborted (possibly timed out after ${timeoutInMs}ms).`);
+                throw new FetchTimeoutError(`Timed out after ${timeoutInMs}ms for CID ${cid}`);
+            }
+
+            // Otherwise, rethrow so the caller can handle
+            throw error;
+        }
+
+        // Combine all chunks into a single Uint8Array
+        const data = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const chunk of chunks) {
+            data.set(chunk, offset);
+            offset += chunk.byteLength;
+        }
+
+        // Parse JSON
+        let profile: any;
+        try {
+            profile = JSON.parse(Buffer.from(data).toString('utf-8'));
+        } catch (err) {
+            this.addToBlackList(cid);
+            throw new InvalidJSONError('Invalid JSON data');
+        }
+
+        // Validate
+        const validation = await ProfileValidator.validateProfile(profile);
+        if (validation.errors.length) {
+            this.addToBlackList(cid);
+            throw new ProfileValidationError(validation.errors.join(', '));
+        }
+
+        return validation.sanitizedProfile!;
+    };
+
+    getCachedProfile = async (
+        cid: string,
+        timeoutInMs: number
+    ): Promise<IPFSDataProfile> => {
+        return this.profileCache.get(cid, timeoutInMs);
+    };
 }

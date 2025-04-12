@@ -1,9 +1,12 @@
 export const logError = (description: string, error?: any) => {
-  console.error(`${description}:`, error);
+  console.error(`[ERROR] ${description}:`, error);
 };
 export const logWarn = (...logs: string[]) => {
-  console.warn(...logs);
+  console.warn('[WARN]   ', ...logs);
 }
 export const logInfo = (...logs: string[]) => {
-  console.log(...logs);
+  console.log('[INFO]    ',...logs);
+};
+export const logDebug = (...logs: string[]) => {
+  console.log('[DEBUG]   ',...logs);
 };
