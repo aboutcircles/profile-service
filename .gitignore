@@ -46,3 +46,5 @@ packages/tests/.contracts
 .env.*
 data
 profile-db.sqlite3
+circles-profile-db.sqlite3
+rings-profile-db.sqlite3
