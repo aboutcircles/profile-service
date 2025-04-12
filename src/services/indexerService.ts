@@ -262,7 +262,7 @@ export class IndexerService {
             if (e instanceof GatewayError && e.statusCode >= 500 && e.statusCode < 600) {
                 if (envelope.retries < config.maxProfileFetchRetries) {
                     logWarn(
-                        `Retrying ${envelope.event.$event}, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after 5xx: ${e.message}`
+                        `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after 5xx: ${e.message}`
                     );
                     this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
                 } else {
@@ -277,7 +277,7 @@ export class IndexerService {
             if (e instanceof FetchTimeoutError) {
                 if (envelope.retries < config.maxProfileFetchRetries) {
                     logWarn(
-                        `Retrying ${envelope.event.$event}, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after timeout: ${e.message}`
+                        `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after timeout: ${e.message}`
                     );
                     this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
                 } else {
