@@ -1,4 +1,4 @@
-import {logInfo, logWarn} from '../utils/logger';
+import {logError, logInfo, logWarn} from '../utils/logger';
 import {LRUCache} from 'lru-cache';
 import {IPFSDataProfile} from '../types';
 import config from '../config/config';
@@ -59,7 +59,7 @@ export class PinningService implements PersistenceService {
                 });
                 request.send();
             } catch (err) {
-                console.error(`Error uploading profile ${JSON.stringify(profile)} to Filebase:`, err);
+                logError(`Error uploading profile ${JSON.stringify(profile)} to Filebase:`, err);
                 reject(err);
             }
         });

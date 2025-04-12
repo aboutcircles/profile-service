@@ -320,12 +320,12 @@ export class IndexerService {
             const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
             if (latestBlock > envelope.event.blockNumber) {
                 logInfo(
-                    `Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
+                    `Retry: Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
                 );
                 return;
             }
 
-            logInfo(`Retrying event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}).. Attempt ${envelope.retries}.`);
+            logInfo(`Retry: Retrying event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}).. Attempt ${envelope.retries}.`);
         }
 
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
@@ -333,7 +333,7 @@ export class IndexerService {
         if (envelope.event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
             // Check if there's already a (v2) profile for the address, if so, skip the event.
             // Long term we might want to store both profiles. Right now v2 overrides v1.
-            console.log(`Skipping v1 profile for ${avatar} because there's a profile already`);
+            logInfo(`Skipping v1 profile for ${avatar} because there's a profile already`);
             return;
         }
 

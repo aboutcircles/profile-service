@@ -1,3 +1,5 @@
+import {logInfo} from "../../utils/logger";
+
 export default {
   up(db: any) {
     // Get the list of existing columns in the profiles table
@@ -7,17 +9,17 @@ export default {
     // Add columns that don't already exist
     if (!existingColumns.includes('location')) {
       db.prepare(`ALTER TABLE profiles ADD COLUMN location TEXT`).run();
-      console.log('Added location column to profiles table');
+      logInfo('Added location column to profiles table');
     }
     
     if (!existingColumns.includes('longitude')) {
       db.prepare(`ALTER TABLE profiles ADD COLUMN longitude REAL`).run();
-      console.log('Added longitude column to profiles table');
+      logInfo('Added longitude column to profiles table');
     }
     
     if (!existingColumns.includes('latitude')) {
       db.prepare(`ALTER TABLE profiles ADD COLUMN latitude REAL`).run();
-      console.log('Added latitude column to profiles table');
+      logInfo('Added latitude column to profiles table');
     }
     
     // Create an index on latitude and longitude for efficient geospatial queries
@@ -86,6 +88,6 @@ export default {
       END
     `).run();
   
-    console.log('Location-related migration with improved symbol support completed successfully');
+    logInfo('Location-related migration with improved symbol support completed successfully');
   }
 };

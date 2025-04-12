@@ -156,11 +156,11 @@ app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
     }
 
     const cid = await persistenceService.pin(validation.sanitizedProfile);
-    console.log('JSON pinned to IPFS with CID:', cid);
+    logInfo('JSON pinned to IPFS with CID:', cid);
     if (req.timedout) return;
     return res.json({cid: cid});
   } catch (error) {
-    console.error('Failed to pin JSON:', error);
+    logError('Failed to pin JSON:', error);
   }
 });
 
