@@ -1,5 +1,5 @@
 import config from '../config/config';
-import {logError} from '../utils/logger';
+import {logWarn} from '../utils/logger';
 import sharp from "sharp";
 import {sanitizeProfile} from "../utils/sanitizer";
 import { IPFSDataProfile } from '../types';
@@ -13,14 +13,14 @@ export class ProfileValidator {
   static async validateImage(dataUrl: string): Promise<boolean> {
     const dataUrlPattern = /^data:image\/(png|jpeg|jpg|gif);base64,/;
     if (!dataUrlPattern.test(dataUrl)) {
-      logError('Invalid data URL pattern');
+      logWarn('Invalid data URL pattern');
       return false;
     }
 
     const base64Data = dataUrl.replace(dataUrlPattern, '');
     const buffer = Buffer.from(base64Data, 'base64');
     if (buffer.length > config.maxImageSizeKB * 1024) {
-      logError('Image size exceeds limit');
+      logWarn('Image size exceeds limit');
       return false;
     }
 
@@ -32,8 +32,8 @@ export class ProfileValidator {
         height !== config.imageDimension ||
         !['png', 'jpeg', 'gif'].includes(format ?? '')
       );
-    } catch (error) {
-      logError('Failed to read image metadata', error);
+    } catch (error:any) {
+      logWarn('Failed to read image metadata', error.message, error.stack);
       return false;
     }
   }

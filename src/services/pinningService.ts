@@ -7,7 +7,8 @@ import {PersistenceService} from './persistenceService';
 import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
 import {
-    BlacklistedCidError, FetchTimeoutError,
+    BlacklistedCidError,
+    FetchTimeoutError,
     GatewayError,
     InvalidJSONError,
     ProfileValidationError,

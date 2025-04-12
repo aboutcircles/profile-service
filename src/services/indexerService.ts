@@ -251,12 +251,7 @@ export class IndexerService {
                     logWarn(`Unknown event type: ${envelope.event.$event}`);
                     break;
             }
-        } catch (e) {
-            logError(
-                `Failed to process event ${envelope.event.$event} (tx: ${envelope.event.transactionHash}):`,
-                e
-            );
-
+        } catch (e:any) {
             // If we got a 404 => do not retry
             if (e instanceof GatewayError && e.statusCode === 404) {
                 logWarn(`Non-retryable 404 for event ${envelope.event.$event}, block ${envelope.event.blockNumber}`);
@@ -271,7 +266,7 @@ export class IndexerService {
                     );
                     this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
                 } else {
-                    logWarn(
+                    logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (5xx error).`
                     );
                 }
@@ -286,7 +281,7 @@ export class IndexerService {
                     );
                     this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
                 } else {
-                    logWarn(
+                    logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (timeout).`
                     );
                 }
@@ -303,6 +298,10 @@ export class IndexerService {
                 logWarn(`Non-retryable error for event ${envelope.event.$event}, block ${envelope.event.blockNumber}: ${e.message}`);
                 return;
             }
+
+            logError(
+                `Failed to process event ${envelope.event.$event} (tx: ${envelope.event.transactionHash}):`, e
+            );
 
             throw e;
         }
