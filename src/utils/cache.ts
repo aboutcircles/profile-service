@@ -1,41 +1,52 @@
 import {LRUCache} from "lru-cache";
-import {logError, logInfo} from "./logger";
-import {IPFSDataProfile} from "../types";
+import {logDebug, logInfo} from "./logger";
 
 export interface RetrievalHook<T> {
     (key: string, timeoutInMs: number): Promise<T | undefined>;
 }
 
-export class CacheService<T> {
-    private cache: LRUCache<string, IPFSDataProfile>;
-    private retrievalHook: RetrievalHook<IPFSDataProfile>;
+export class NotFoundError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'NotFoundError';
+    }
+}
 
-    constructor(maxSize: number, retrievalHook: RetrievalHook<IPFSDataProfile>) {
-        this.cache = new LRUCache<string, IPFSDataProfile>({max: maxSize});
+export class CacheService<T extends {}> {
+    private cache: LRUCache<string, T>;
+    private retrievalHook: RetrievalHook<T>;
+
+    constructor(maxSize: number, retrievalHook: RetrievalHook<T>) {
+        this.cache = new LRUCache<string, T>({max: maxSize});
         this.retrievalHook = retrievalHook;
     }
 
-    public async get(key: string, timeoutInMs: number): Promise<IPFSDataProfile | undefined> {
+    public async tryGet(key: string, timeoutInMs: number): Promise<T | undefined> {
         const cachedValue = this.cache.get(key);
         if (cachedValue) {
-            logInfo(`Cache hit for key: ${key}`);
+            logDebug(`Cache hit for key: ${key}`);
             return cachedValue;
         }
 
         logInfo(`Cache miss for key: ${key}. Retrieving from origin.`);
-        try {
-            const value = await this.retrievalHook(key, timeoutInMs);
-            if (value) {
-                this.cache.set(key, value);
-            }
+        const value = await this.retrievalHook(key, timeoutInMs);
+        if (value) {
+            this.cache.set(key, value);
             return value;
-        } catch (e) {
-            logError(`Error retrieving profile from origin for key: ${key}`, e)
-            return undefined;
         }
+
+        return undefined;
     }
 
-    public set(key: string, value: IPFSDataProfile): void {
+    public async get(key: string, timeoutInMs: number): Promise<T> {
+        const value = await this.tryGet(key, timeoutInMs);
+        if (!value) {
+            throw new NotFoundError(`No value found for key: ${key}`);
+        }
+        return value;
+    }
+
+    public set(key: string, value: T): void {
         this.cache.set(key, value);
     }
 

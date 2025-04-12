@@ -33,6 +33,12 @@ export class ProfileRepository {
         FROM profiles;
     `);
 
+    private getLastProcessedBlockForAddressStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
+        SELECT MAX(lastUpdatedAt) AS lastProcessed
+        FROM profiles
+        WHERE address = ?;
+    `)
+
     private deleteOlderThanBlockStmt = db.prepare(`
         DELETE
         FROM profiles
@@ -48,6 +54,10 @@ export class ProfileRepository {
 
     getLastProcessedBlock(): number {
         return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
+    }
+
+    getLastProcessedBlockForAddress(address: string): number {
+        return this.getLastProcessedBlockForAddressStmt.get(address)?.lastProcessed || 0;
     }
 
     upsertProfile(profile: Profile): void {

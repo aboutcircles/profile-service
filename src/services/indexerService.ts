@@ -8,20 +8,29 @@ import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logError, logInfo, logWarn} from '../utils/logger';
 import {PersistenceService} from './persistenceService';
+import {
+    BlacklistedCidError,
+    FetchTimeoutError,
+    GatewayError,
+    InvalidJSONError,
+    ProfileValidationError,
+    ResponseSizeExceededError
+} from "./fetchFromOriginErrors";
+import {EventEnvelope} from "./eventEnvelope";
 
 export class IndexerService {
     private circlesData: any;
 
     /**
-     * Single FIFO queue for *all* events (both older "RPC" events and new "WS" events).
+     * Single FIFO queue for *all* events (both older "RPC" events and new "WS" events, as well as events queued for retry).
      */
-    private eventQueue = new EventQueue<any>();
+    private eventQueue = new EventQueue<EventEnvelope>();
 
     /**
      * Buffer for *new* subscription events while we are still catching up.
      * We'll flush these into `eventQueue` only *after* the older events are processed.
      */
-    private subscriptionBuffer: any[] = [];
+    private subscriptionBuffer: EventEnvelope[] = [];
 
     /**
      * Flag to prevent multiple queue processors from running simultaneously.
@@ -79,9 +88,12 @@ export class IndexerService {
         // 5) Flush any subscription events that arrived during the catch-up.
         //    Now these "live" events are guaranteed to be from strictly newer blocks.
         logInfo('Flushing buffered subscription events...');
-      
+
         for (const event of this.subscriptionBuffer) {
-            this.eventQueue.enqueue(event);
+            this.eventQueue.enqueue({
+                event,
+                retries: 0,  // first time we see this event
+            } as EventEnvelope);
         }
         this.subscriptionBuffer = [];
         await this.processQueue();
@@ -105,7 +117,10 @@ export class IndexerService {
         const events = await this.circlesData.subscribeToEvents();
         this.websocketUnsubscriber = events.subscribe((event: any) => {
             // During the catch-up, simply store them so we don't lose them.
-            this.subscriptionBuffer.push(event);
+            this.subscriptionBuffer.push({
+                event: event,
+                retries: 0
+            } as EventEnvelope);
         });
     }
 
@@ -165,7 +180,10 @@ export class IndexerService {
 
             // Enqueue all these older events
             for (const event of events) {
-                this.eventQueue.enqueue(event);
+                this.eventQueue.enqueue({
+                    event,
+                    retries: 0,  // first time we see this event
+                } as EventEnvelope);
             }
         } catch (e) {
             logError('Error fetching events:', e);
@@ -186,8 +204,11 @@ export class IndexerService {
 
         try {
             while (!this.eventQueue.isEmpty()) {
-                const event = this.eventQueue.dequeue();
-                await this.processSingleEvent(event);
+                const envelope = this.eventQueue.dequeue();
+                if (!envelope) {
+                    throw new Error('Event envelope is null');
+                }
+                await this.processSingleEvent(envelope);
             }
         } catch (err) {
             logError('Error processing event queue:', err);
@@ -201,62 +222,125 @@ export class IndexerService {
      * Triggers processing as well.
      */
     private enqueueEvent(event: any) {
-        this.eventQueue.enqueue(event);
+        this.eventQueue.enqueue({
+            event,
+            retries: 0,  // first time we see this event
+        } as EventEnvelope);
+
         void this.processQueue(); // Kick off processing if we're idle
     }
 
     /**
      * Process an event by type, ensuring we do a single DB write at a time (SQLite friendly).
      */
-    private async processSingleEvent(event: any) {
+    private async processSingleEvent(envelope: EventEnvelope) {
         try {
-            switch (event.$event) {
+            switch (envelope.event.$event) {
                 case 'CrcV1_UpdateMetadataDigest':
                 case 'CrcV2_UpdateMetadataDigest':
-                    await this.processUpdateMetadataEvent(event);
+                    await this.processUpdateMetadataEvent(envelope);
                     break;
 
                 case 'CrcV2_RegisterShortName':
                 case 'CrcV2_RegisterGroup':
                 case 'CrcV2_RegisterOrganization':
-                    await this.processNameEvent(event);
+                    await this.processNameEvent(envelope.event);
                     break;
 
                 default:
-                    logWarn(`Unknown event type: ${event.$event}`, event);
+                    logWarn(`Unknown event type: ${envelope.event.$event}`);
                     break;
             }
-        } catch (err) {
+        } catch (e:any) {
+            // If we got a 404 => do not retry
+            if (e instanceof GatewayError && e.statusCode === 404) {
+                logWarn(`Non-retryable 404 for event ${envelope.event.$event}, block ${envelope.event.blockNumber}`);
+                return;
+            }
+
+            // If we got a 5xx => retry if under limit
+            if (e instanceof GatewayError && e.statusCode >= 500 && e.statusCode < 600) {
+                if (envelope.retries < config.maxProfileFetchRetries) {
+                    logWarn(
+                        `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after 5xx: ${e.message}`
+                    );
+                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                } else {
+                    logError(
+                        `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (5xx error).`
+                    );
+                }
+                return;
+            }
+
+            // If we got a fetch timeout => retry if under limit
+            if (e instanceof FetchTimeoutError) {
+                if (envelope.retries < config.maxProfileFetchRetries) {
+                    logWarn(
+                        `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after timeout: ${e.message}`
+                    );
+                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                } else {
+                    logError(
+                        `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (timeout).`
+                    );
+                }
+                return;
+            }
+
+            // If these non-retryable errors:
+            if (
+                e instanceof BlacklistedCidError ||
+                e instanceof ResponseSizeExceededError ||
+                e instanceof InvalidJSONError ||
+                e instanceof ProfileValidationError
+            ) {
+                logWarn(`Non-retryable error for event ${envelope.event.$event}, block ${envelope.event.blockNumber}: ${e.message}`);
+                return;
+            }
+
             logError(
-                `Failed to process event ${event.$event} (tx: ${event.transactionHash}):`,
-                err
+                `Failed to process event ${envelope.event.$event} (tx: ${envelope.event.transactionHash}):`, e
             );
+
+            throw e;
         }
     }
 
     /**
      * Processes the "UpdateMetadataDigest" event, updating the profile in SQLite.
      */
-    private async processUpdateMetadataEvent(event: any) {
-        const {avatar, metadataDigest, blockNumber, transactionHash} = event;
+    private async processUpdateMetadataEvent(envelope: EventEnvelope) {
+        const {avatar, metadataDigest, blockNumber, transactionHash} = envelope.event;
+
+        if (envelope.retries > 0) {
+            // This is an old event which is retried.
+            // Ignore it if the account already has newer data.
+            const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
+            if (latestBlock > envelope.event.blockNumber) {
+                logInfo(
+                    `Retry: Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
+                );
+                return;
+            }
+
+            logInfo(`Retry: Retrying event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}).. Attempt ${envelope.retries}.`);
+        }
+
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
 
-        if (event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
+        if (envelope.event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
             // Check if there's already a (v2) profile for the address, if so, skip the event.
             // Long term we might want to store both profiles. Right now v2 overrides v1.
-            console.log(`Skipping v1 profile for ${avatar} because there's a profile already`);
+            logInfo(`Skipping v1 profile for ${avatar} because there's a profile already`);
             return;
         }
 
         // remove "0x" prefix
         const CID = uint8ArrayToCidV0(metadataDigest.slice(1));
-      
+
         // Attempt to fetch IPFS data
-        const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout / 2);
-        if (!profileData) {
-            logError(`Failed to fetch profile data for CID: ${CID}`);
-            return;
-        }
+        const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout);
 
         // If IPFS data is found, store it all
         const profile: Profile = {

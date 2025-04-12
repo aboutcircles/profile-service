@@ -17,7 +17,7 @@ const config = {
   descriptionLength: parseInt(process.env.DESCRIPTION_LENGTH || '500'),
   imageUrlLength: parseInt(process.env.IMAGE_URL_LENGTH || '2000'),
   imageDimension: parseInt(process.env.IMAGE_DIMENSION || '256'),
-  defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '1') * 1000,
+  defaultTimeout: parseInt(process.env.DEFAULT_TIMEOUT || '500'),
   maxNameLength: parseInt(process.env.MAX_NAME_LENGTH || '36'),
   maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50'),
   cacheMaxSize: parseInt(process.env.CACHE_MAX_SIZE || '25000'),
@@ -34,6 +34,7 @@ const config = {
   isCleanupEnabled: process.env.CLEANUP_ENABLED === 'true',
   cleanupBatchSize: parseInt(process.env.CLEANUP_BATCH_SIZE || '100'),
   cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '30'),
+  maxProfileFetchRetries: 3
 };
 
 config.maxProfileSize = config.descriptionLength + config.imageUrlLength + config.maxNameLength + config.maxImageSizeKB * 1024;

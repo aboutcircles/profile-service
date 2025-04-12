@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-import { logError } from '../utils/logger';
+import {logError, logInfo} from '../utils/logger';
 import config from '../config/config';
 
 const db = new Database(config.databasePath);
@@ -72,7 +72,7 @@ const runMigrations = () => {
                 // Commit transaction
                 db.exec('COMMIT');
                 
-                console.log(`Applied migration: ${migrationFile}`);
+                logInfo(`Applied migration: ${migrationFile}`);
             } catch (error) {
                 // Rollback on error
                 db.exec('ROLLBACK');

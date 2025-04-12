@@ -51,7 +51,7 @@ export interface PersistenceService {
   getCachedProfile(
     cid: string,
     timeoutInMs: number
-  ): Promise<IPFSDataProfile | undefined>;
+  ): Promise<IPFSDataProfile>;
 
   /**
    * Pins a profile to the IPFS node.
