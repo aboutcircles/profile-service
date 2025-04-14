@@ -6,7 +6,7 @@ import {ProfileRepository} from '../repositories/profileRepo';
 import {Profile} from '../types';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
-import {logError, logInfo, logWarn} from '../utils/logger';
+import {logDebug, logError, logInfo, logWarn} from '../utils/logger';
 import {PersistenceService} from './persistenceService';
 import {
     BlacklistedCidError,
@@ -248,7 +248,7 @@ export class IndexerService {
                     break;
 
                 default:
-                    logWarn(`Unknown event type: ${envelope.event.$event}`);
+                    logDebug(`Received event of unknown type: ${envelope.event.$event}`);
                     break;
             }
         } catch (e:any) {
@@ -433,7 +433,7 @@ export class IndexerService {
 
                 // Check for reorg
                 if (this.lastBlockHash && parentHash !== this.lastBlockHash) {
-                    logWarn('Reorg detected! Re-indexing recent blocks...');
+                    logInfo('Reorg detected! Re-indexing recent blocks...');
                     await this.handleReorg(blockNumber);
                 }
                 this.lastBlockHash = blockHash;
