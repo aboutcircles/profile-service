@@ -2,7 +2,6 @@ import express, {Request, Response} from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import config from './config/config';
-import {ProfileRepository} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
 import {errorHandler} from './utils/errorHandler';
 import {logError, logInfo, logWarn} from './utils/logger';
@@ -11,6 +10,9 @@ import {PinningService} from "./services/pinningService";
 import {ProfileValidator} from "./services/profileValidator";
 import {Profile, IPFSDataProfile, CompleteProfile} from './types';
 import {GatewayError} from "./services/fetchFromOriginErrors";
+import {ProfileWriter} from "./repositories/profileWriter";
+import {DbMetadata} from "./repositories/dbMetadata";
+import {ProfileSearcher} from "./repositories/profileSearcher";
 
 const app = express();
 
@@ -20,8 +22,11 @@ app.use(bodyParser.json({limit: `${config.maxProfileSize / 1024}kb`}));
 app.use(errorHandler);
 
 const persistenceService: PinningService = new PinningService();
-let profileRepo: ProfileRepository = new ProfileRepository();
-let indexerService = new IndexerService(persistenceService, profileRepo);
+const profileWriter = new ProfileWriter();
+const profileSearcher = new ProfileSearcher();
+const profileReader = new DbMetadata();
+
+let indexerService = new IndexerService(persistenceService, profileReader, profileWriter);
 
 (async () => {
     await indexerService.initialize();
@@ -209,7 +214,7 @@ app.post('/search/addresses', (req, res) => {
         // Split back into array after sanitization
         const sanitizedAddresses = sanitizeResult.sanitized.addresses?.split(',') || [];
 
-        const results = profileRepo?.searchProfilesByAddresses(sanitizedAddresses);
+        const results = profileSearcher?.searchProfilesByAddresses(sanitizedAddresses);
 
         if (!results) {
             return res.status(500).json({error: 'Internal Server Error'});
@@ -284,7 +289,7 @@ app.get('/search', (req, res) => {
             });
         }
 
-        const results = profileRepo?.searchProfiles({
+        const results = profileSearcher?.searchProfiles({
             name: sanitizeResult.sanitized.name,
             description: sanitizeResult.sanitized.description,
             address: sanitizeResult.sanitized.address,

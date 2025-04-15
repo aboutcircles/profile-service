@@ -2,7 +2,6 @@ import axios from 'axios';
 import {createPublicClient, http} from 'viem';
 import {gnosis} from 'viem/chains';
 import config from '../config/config';
-import {ProfileRepository} from '../repositories/profileRepo';
 import {Profile} from '../types';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
@@ -17,6 +16,8 @@ import {
 } from "./fetchFromOriginErrors";
 import {EventEnvelope} from "./eventEnvelope";
 import {PinningService} from "./pinningService";
+import {ProfileWriter} from "../repositories/profileWriter";
+import {DbMetadata} from "../repositories/dbMetadata";
 
 export class IndexerService {
     private circlesData: any;
@@ -52,7 +53,8 @@ export class IndexerService {
 
     constructor(
         private persistenceService: PinningService,
-        private profileRepository: ProfileRepository
+        private dbMetadata: DbMetadata,
+        private profileWriter: ProfileWriter
     ) {
     }
 
@@ -76,7 +78,7 @@ export class IndexerService {
 
         // 2) Figure out what block was last processed and the current chain tip.
         const latestBlock = await this.fetchLatestBlock();
-        const lastProcessedBlock = this.profileRepository.getLastProcessedBlock();
+        const lastProcessedBlock = this.dbMetadata.getLastProcessedBlock();
 
         // 3) Catch up on older events (from lastProcessedBlock -> latestBlock).
         //    Put them directly into our single eventQueue.
@@ -251,7 +253,7 @@ export class IndexerService {
                     logDebug(`Received event of unknown type: ${envelope.event.$event}`);
                     break;
             }
-        } catch (e:any) {
+        } catch (e: any) {
             // If we got a 404 => do not retry
             if (e instanceof GatewayError && e.statusCode === 404) {
                 logWarn(`Non-retryable 404 for event ${envelope.event.$event}, block ${envelope.event.blockNumber}`);
@@ -316,7 +318,7 @@ export class IndexerService {
         if (envelope.retries > 0) {
             // This is an old event which is retried.
             // Ignore it if the account already has newer data.
-            const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
+            const latestBlock = this.dbMetadata.getLastProcessedBlockForAddress(avatar);
             if (latestBlock > envelope.event.blockNumber) {
                 logInfo(
                     `Retry: Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
@@ -329,7 +331,7 @@ export class IndexerService {
 
         logInfo(`Processing metadata update: tx=${transactionHash}, block=${blockNumber}`);
 
-        if (envelope.event.$event === 'CrcV1_UpdateMetadataDigest' && this.profileRepository.hasProfile(avatar)) {
+        if (envelope.event.$event === 'CrcV1_UpdateMetadataDigest' && this.dbMetadata.hasProfile(avatar)) {
             // Check if there's already a (v2) profile for the address, if so, skip the event.
             // Long term we might want to store both profiles. Right now v2 overrides v1.
             logInfo(`Skipping v1 profile for ${avatar} because there's a profile already`);
@@ -354,7 +356,7 @@ export class IndexerService {
             geoLocation: profileData.geoLocation ?? undefined
         };
 
-        this.profileRepository.upsertProfile(profile);
+        this.profileWriter.upsertProfile(profile);
 
         logInfo(
             `Profile upserted for avatar=${avatar}, block=${blockNumber}, name=${profileData.name}`
@@ -411,7 +413,7 @@ export class IndexerService {
                 geoLocation: undefined
             };
 
-            this.profileRepository.upsertProfile(profile);
+            this.profileWriter.upsertProfile(profile);
 
             logInfo(`Upserted registered name for ${address}: ${name} (block ${blockNumber})`);
         }
@@ -455,7 +457,7 @@ export class IndexerService {
         );
 
         // 1) Roll back
-        this.profileRepository.deleteDataOlderThanBlock(startBlock);
+        this.profileWriter.deleteDataOlderThanBlock(startBlock);
 
         // 2) Re-fetch events for [startBlock..currentBlockNumber], enqueue them
         await this.catchUpOnMissedEvents(startBlock, currentBlockNumber);

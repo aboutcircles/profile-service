@@ -1,89 +1,16 @@
-import type {Statement} from 'better-sqlite3';
 import db from '../database/db';
-import config from '../config/config';
 import {Profile} from '../types';
+import config from "../config/config";
 
-/**
- * Helper function to sanitize FTS input.
- * It removes double quotes which can break the intended quoting in the FTS MATCH clause.
- * You can expand this function to remove or escape other characters if needed.
- */
-function sanitizeFtsInput(input: string): string {
-    return input.replace(/"/g, '');
-}
-
-export class ProfileRepository {
-    private insertOrUpdateProfileStmt = db.prepare(`
-        INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location, longitude,
-                              latitude)
-        VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location, @longitude, @latitude)
-        ON CONFLICT(address) DO UPDATE
-            SET lastUpdatedAt  = excluded.lastUpdatedAt,
-                CID            = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
-                name           = COALESCE(NULLIF(excluded.name, ''), profiles.name),
-                description    = COALESCE(NULLIF(excluded.description, ''), profiles.description),
-                registeredName = COALESCE(excluded.registeredName, profiles.registeredName),
-                location       = COALESCE(NULLIF(excluded.location, ''), profiles.location),
-                longitude      = COALESCE(excluded.longitude, profiles.longitude),
-                latitude       = COALESCE(excluded.latitude, profiles.latitude);
-    `);
-
-    private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
-        SELECT MAX(lastUpdatedAt) AS lastProcessed
-        FROM profiles;
-    `);
-
-    private getLastProcessedBlockForAddressStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
-        SELECT MAX(lastUpdatedAt) AS lastProcessed
-        FROM profiles
-        WHERE address = ?;
-    `)
-
-    private deleteOlderThanBlockStmt = db.prepare(`
-        DELETE
-        FROM profiles
-        WHERE lastUpdatedAt >= ?;
-    `);
-
-    private hasProfileStmt = db.prepare(`
-        SELECT 1
-        FROM profiles
-        WHERE address = ?
-        LIMIT 1;
-    `);
-
-    getLastProcessedBlock(): number {
-        return this.getLastProcessedBlockStmt.get()?.lastProcessed || 0;
-    }
-
-    getLastProcessedBlockForAddress(address: string): number {
-        return this.getLastProcessedBlockForAddressStmt.get(address)?.lastProcessed || 0;
-    }
-
-    upsertProfile(profile: Profile): void {
-        // Create a database-ready object with longitude and latitude as separate columns
-        const dbProfile = {
-            ...profile,
-            longitude: profile.geoLocation ? profile.geoLocation[0] : null,
-            latitude: profile.geoLocation ? profile.geoLocation[1] : null
-        };
-
-        this.insertOrUpdateProfileStmt.run(dbProfile);
-    }
-
-    deleteDataOlderThanBlock(blockNumber: number): void {
-        this.deleteOlderThanBlockStmt.run(blockNumber);
-    }
-
-    hasProfile(address: string): boolean {
-        return this.hasProfileStmt.get(address) !== undefined;
+export class ProfileSearcher {
+    sanitizeFtsInput(input: string): string {
+        return input.replace(/"/g, '');
     }
 
     searchProfilesByAddresses(addresses: string[]): Profile[] {
         if (!addresses.length) return [];
 
         const placeholders = addresses.map(() => '?').join(',');
-
         const sql = `
             SELECT p.address,
                    p.name,
@@ -101,7 +28,6 @@ export class ProfileRepository {
 
         const results = db.prepare(sql).all([...addresses, config.maxListSize]);
 
-        // Convert DB results to Profile objects with geoLocation array
         return results.map((row: any) => {
             const profile: Profile = {
                 address: row.address,
@@ -113,7 +39,6 @@ export class ProfileRepository {
                 location: row.location
             };
 
-            // Add geoLocation only if both longitude and latitude exist
             if (row.longitude !== null && row.latitude !== null) {
                 profile.geoLocation = [row.longitude, row.latitude];
             }
@@ -135,12 +60,10 @@ export class ProfileRepository {
         CID?: string;
         registeredName?: string;
         location?: string;
-    }): any[] {
-        // If no FTS filters are given, run a simpler query directly on `profiles`.
+    }): Profile[] {
         const hasFts = !!(filters.name || filters.description || filters.location);
 
         if (!hasFts) {
-            // -- CASE 1: No FTS-based filtering --
             let sql = `
                 SELECT p.address,
                        p.name,
@@ -174,13 +97,11 @@ export class ProfileRepository {
                 sql += ' WHERE ' + conditions.join(' AND ');
             }
 
-            // Add a limit placeholder (better-sqlite3 supports LIMIT ?)
             sql += ' LIMIT ?';
             params.push(config.maxListSize);
 
             const results = db.prepare(sql).all(params);
 
-            // Convert DB results to Profile objects with geoLocation array
             return results.map((row: any) => {
                 const profile: Profile = {
                     address: row.address,
@@ -192,7 +113,6 @@ export class ProfileRepository {
                     location: row.location
                 };
 
-                // Add geoLocation only if both longitude and latitude exist
                 if (row.longitude !== null && row.latitude !== null) {
                     profile.geoLocation = [row.longitude, row.latitude];
                 }
@@ -200,7 +120,6 @@ export class ProfileRepository {
                 return profile;
             });
         } else {
-            // -- CASE 2: At least one FTS filter (name or description) --
             let sql = `
                 SELECT p.address,
                        p.name,
@@ -219,25 +138,22 @@ export class ProfileRepository {
             const conditions: string[] = [];
             const params: any[] = [];
 
-            // FTS conditions first
             if (filters.name) {
                 conditions.push('f.name MATCH ?');
-                // Sanitize and append "*" for prefix searching
-                const sanitized = sanitizeFtsInput(filters.name);
+                const sanitized = this.sanitizeFtsInput(filters.name);
                 params.push(`"${sanitized}"*`);
             }
             if (filters.description) {
                 conditions.push('f.description MATCH ?');
-                const sanitized = sanitizeFtsInput(filters.description);
+                const sanitized = this.sanitizeFtsInput(filters.description);
                 params.push(`"${sanitized}"*`);
             }
             if (filters.location) {
                 conditions.push('f.location MATCH ?');
-                const sanitized = sanitizeFtsInput(filters.location);
+                const sanitized = this.sanitizeFtsInput(filters.location);
                 params.push(`"${sanitized}"*`);
             }
 
-            // Non-FTS equality conditions (address, CID, registeredName)
             if (filters.address) {
                 conditions.push('p.address LIKE ?');
                 params.push(`${filters.address}%`);
@@ -251,17 +167,13 @@ export class ProfileRepository {
                 params.push(filters.registeredName);
             }
 
-            // Join all conditions with AND
             sql += conditions.join(' AND ');
-
-            // Add a limit placeholder
             sql += ' LIMIT ?';
             params.push(config.maxListSize);
 
             const results = db.prepare(sql).all(params);
 
-            // Convert DB results to Profile objects with geoLocation array
-            return results.map((row: any): Profile => {
+            return results.map((row: any) => {
                 const profile: Profile = {
                     address: row.address,
                     CID: row.CID,
@@ -272,7 +184,6 @@ export class ProfileRepository {
                     location: row.location
                 };
 
-                // Add geoLocation only if both longitude and latitude exist
                 if (row.longitude !== null && row.latitude !== null) {
                     profile.geoLocation = [row.longitude, row.latitude];
                 }
