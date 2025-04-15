@@ -7,7 +7,6 @@ import {Profile} from '../types';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logDebug, logError, logInfo, logWarn} from '../utils/logger';
-import {PersistenceService} from './persistenceService';
 import {
     BlacklistedCidError,
     FetchTimeoutError,
@@ -17,6 +16,7 @@ import {
     ResponseSizeExceededError
 } from "./fetchFromOriginErrors";
 import {EventEnvelope} from "./eventEnvelope";
+import {PinningService} from "./pinningService";
 
 export class IndexerService {
     private circlesData: any;
@@ -51,7 +51,7 @@ export class IndexerService {
     });
 
     constructor(
-        private persistenceService: PersistenceService,
+        private persistenceService: PinningService,
         private profileRepository: ProfileRepository
     ) {
     }

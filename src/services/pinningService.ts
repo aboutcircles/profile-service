@@ -3,7 +3,6 @@ import {LRUCache} from 'lru-cache';
 import {IPFSDataProfile} from '../types';
 import config from '../config/config';
 import {CacheService} from '../utils/cache';
-import {PersistenceService} from './persistenceService';
 import {ProfileValidator} from './profileValidator';
 import AWS from "aws-sdk";
 import {
@@ -16,7 +15,7 @@ import {
 } from "./fetchFromOriginErrors";
 import {v4 as uuidv4} from "uuid";
 
-export class PinningService implements PersistenceService {
+export class PinningService {
     profileCache: CacheService<IPFSDataProfile>;
     blackList = new LRUCache<string, any>({max: 100000});
 

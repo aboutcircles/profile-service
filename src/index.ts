@@ -1,17 +1,14 @@
 import express, {Request, Response} from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import timeout from 'connect-timeout';
 import config from './config/config';
 import {ProfileRepository} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
-import {KuboService} from './services/kuboService';
 import {errorHandler} from './utils/errorHandler';
 import {logError, logInfo, logWarn} from './utils/logger';
 import {sanitizeSearchParams} from './utils/sanitizer';
 import {PinningService} from "./services/pinningService";
 import {ProfileValidator} from "./services/profileValidator";
-import {PersistenceService} from "./services/persistenceService";
 import {Profile, IPFSDataProfile, CompleteProfile} from './types';
 import {GatewayError} from "./services/fetchFromOriginErrors";
 
@@ -19,21 +16,16 @@ const app = express();
 
 app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
 app.use(bodyParser.json({limit: `${config.maxProfileSize / 1024}kb`}));
-app.use(timeout(`${config.defaultTimeout}ms`));
 
 app.use(errorHandler);
 
-const persistenceService: PersistenceService = config.useS3 ? new PinningService() : new KuboService();
+const persistenceService: PinningService = new PinningService();
 let profileRepo: ProfileRepository = new ProfileRepository();
 let indexerService = new IndexerService(persistenceService, profileRepo);
 
 (async () => {
     await indexerService.initialize();
 })();
-
-const haltOnTimedout = (req: Request, res: Response, next: () => void) => {
-    if (!req.timedout) next();
-};
 
 const isValidCid = (cid: string | null | undefined): boolean =>
     !(!cid || cid.trim() === '' || cid.length != 46 || !cid.startsWith('Qm') || !/^[a-zA-Z0-9]*$/.test(cid));
@@ -47,7 +39,7 @@ const isValidCid = (cid: string | null | undefined): boolean =>
  */
 async function fetchCompleteProfiles(
     profiles: Profile[],
-    persistenceService: PersistenceService,
+    persistenceService: PinningService,
     timeoutInMs: number
 ): Promise<Array<CompleteProfile>> {
     if (!profiles.length) return [];
@@ -73,7 +65,7 @@ async function fetchCompleteProfiles(
     return Promise.all(fetchPromises);
 }
 
-app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
+app.get('/getBatch', async (req: Request, res: Response) => {
     if (req.timedout) return;
 
     const {cids} = req.query;
@@ -122,7 +114,7 @@ app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
     }
 });
 
-app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
+app.get('/get', async (req: Request, res: Response) => {
     if (req.timedout) return;
 
     if (!isValidCid(<any>req.query.cid)) {
@@ -149,7 +141,7 @@ app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
     }
 });
 
-app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
+app.post('/pin', async (req: Request, res: Response) => {
     if (req.timedout) return;
 
     logInfo('Received profile for pinning:', req.body);
@@ -174,7 +166,7 @@ app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
     }
 });
 
-app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
+app.get('/health', async (req: Request, res: Response) => {
     if (req.timedout) return;
     logInfo('Health check initiated');
     try {
