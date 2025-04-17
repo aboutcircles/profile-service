@@ -6,6 +6,7 @@ import {logError, logInfo} from '../utils/logger';
 import config from '../config/config';
 
 const db = new Database(config.databasePath);
+db.pragma('journal_mode = WAL');
 
 // Create migrations table
 db.exec(`

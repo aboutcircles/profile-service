@@ -2,7 +2,7 @@ import type { Statement } from 'better-sqlite3';
 import db from '../database/db';
 import { Profile } from '../types';
 
-export class ProfileWriter {
+export class DbWriter {
     private insertOrUpdateProfileStmt: Statement<Profile> = db.prepare(`
         INSERT INTO profiles (address, CID, lastUpdatedAt, name, description, registeredName, location, longitude, latitude)
         VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location, @longitude, @latitude)

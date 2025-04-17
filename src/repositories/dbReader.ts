@@ -2,7 +2,7 @@ import db from '../database/db';
 import {Profile} from '../types';
 import config from "../config/config";
 
-export class ProfileSearcher {
+export class DbReader {
     sanitizeFtsInput(input: string): string {
         return input.replace(/"/g, '');
     }

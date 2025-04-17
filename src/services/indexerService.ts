@@ -16,7 +16,7 @@ import {
 } from "./fetchFromOriginErrors";
 import {EventEnvelope} from "./eventEnvelope";
 import {PinningService} from "./pinningService";
-import {ProfileWriter} from "../repositories/profileWriter";
+import {DbWriter} from "../repositories/dbWriter";
 import {DbMetadata} from "../repositories/dbMetadata";
 
 export class IndexerService {
@@ -54,7 +54,7 @@ export class IndexerService {
     constructor(
         private persistenceService: PinningService,
         private dbMetadata: DbMetadata,
-        private profileWriter: ProfileWriter
+        private profileWriter: DbWriter
     ) {
     }
 
@@ -180,8 +180,32 @@ export class IndexerService {
                 `Catching up on missed events: ${events.length} total from block ${fromBlock + 1} to ${toBlock}.`
             );
 
-            // Enqueue all these older events
+            // Only keep the latest 'CrcV1_UpdateMetadataDigest' and 'CrcV2_UpdateMetadataDigest' events for each address.
+            // Leave all other events untouched.
+            const mostRecentV1Updates: {[address: string]: any} = {};
+            const mostRecentV2Updates: {[address: string]: any} = {};
+
             for (const event of events) {
+                if (event.$event === "CrcV1_UpdateMetadataDigest") {
+                    mostRecentV1Updates[event.avatar] = event;
+                }
+                if (event.$event === "CrcV2_UpdateMetadataDigest") {
+                    mostRecentV2Updates[event.avatar] = event;
+                }
+            }
+
+            console.log(Object.values(mostRecentV1Updates));
+            console.log(Object.values(mostRecentV2Updates));
+
+            // Enqueue all these older events
+            for (const event of Object.values(mostRecentV1Updates)) {
+                this.eventQueue.enqueue({
+                    event,
+                    retries: 0,  // first time we see this event
+                } as EventEnvelope);
+            }
+
+            for (const event of Object.values(mostRecentV2Updates)) {
                 this.eventQueue.enqueue({
                     event,
                     retries: 0,  // first time we see this event

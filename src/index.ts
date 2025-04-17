@@ -10,9 +10,9 @@ import {PinningService} from "./services/pinningService";
 import {ProfileValidator} from "./services/profileValidator";
 import {Profile, IPFSDataProfile, CompleteProfile} from './types';
 import {GatewayError} from "./services/fetchFromOriginErrors";
-import {ProfileWriter} from "./repositories/profileWriter";
+import {DbWriter} from "./repositories/dbWriter";
 import {DbMetadata} from "./repositories/dbMetadata";
-import {ProfileSearcher} from "./repositories/profileSearcher";
+import {DbReader} from "./repositories/dbReader";
 
 const app = express();
 
@@ -22,8 +22,8 @@ app.use(bodyParser.json({limit: `${config.maxProfileSize / 1024}kb`}));
 app.use(errorHandler);
 
 const persistenceService: PinningService = new PinningService();
-const profileWriter = new ProfileWriter();
-const profileSearcher = new ProfileSearcher();
+const profileWriter = new DbWriter();
+const profileSearcher = new DbReader();
 const profileReader = new DbMetadata();
 
 let indexerService = new IndexerService(persistenceService, profileReader, profileWriter);
