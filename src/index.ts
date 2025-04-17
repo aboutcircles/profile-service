@@ -1,7 +1,6 @@
 import express, {Request, Response} from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import timeout from 'connect-timeout';
 import config from './config/config';
 import {ProfileRepository} from './repositories/profileRepo';
 import {IndexerService} from './services/indexerService';
@@ -19,7 +18,6 @@ const app = express();
 
 app.use(cors({origin: config.corsOrigin, methods: ['GET', 'POST']}));
 app.use(bodyParser.json({limit: `${config.maxProfileSize / 1024}kb`}));
-app.use(timeout(`${config.defaultTimeout}ms`));
 
 app.use(errorHandler);
 
@@ -30,10 +28,6 @@ let indexerService = new IndexerService(persistenceService, profileRepo);
 (async () => {
     await indexerService.initialize();
 })();
-
-const haltOnTimedout = (req: Request, res: Response, next: () => void) => {
-    if (!req.timedout) next();
-};
 
 const isValidCid = (cid: string | null | undefined): boolean =>
     !(!cid || cid.trim() === '' || cid.length != 46 || !cid.startsWith('Qm') || !/^[a-zA-Z0-9]*$/.test(cid));
@@ -73,8 +67,8 @@ async function fetchCompleteProfiles(
     return Promise.all(fetchPromises);
 }
 
-app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
-    if (req.timedout) return;
+app.get('/getBatch', async (req: Request, res: Response) => {
+    
 
     const {cids} = req.query;
     const cidArray = typeof cids === 'string' ? cids.split(',') : [];
@@ -113,17 +107,17 @@ app.get('/getBatch', haltOnTimedout, async (req: Request, res: Response) => {
             );
 
         const profiles: (IPFSDataProfile | null | undefined)[] = await Promise.all(fetchPromises);
-        if (req.timedout) return;
+        
         return res.json(profiles);
     } catch (error) {
-        if (req.timedout) return;
+        
         logError('Failed to fetch profiles in batch', error);
         return res.status(500).json({error: (error as Error).message});
     }
 });
 
-app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
-    if (req.timedout) return;
+app.get('/get', async (req: Request, res: Response) => {
+    
 
     if (!isValidCid(<any>req.query.cid)) {
         return res.status(400).json({error: 'CID is required'});
@@ -136,21 +130,21 @@ app.get('/get', haltOnTimedout, async (req: Request, res: Response) => {
 
     try {
         const profile: IPFSDataProfile | null | undefined = await persistenceService.getCachedProfile(req.query.cid as string, config.defaultTimeout);
-        if (req.timedout) return;
+        
         return res.json(profile);
     } catch (error) {
         if (error instanceof GatewayError && error.statusCode === 404) {
             return res.status(404).json({error: 'Profile not found'});
         }
 
-        if (req.timedout) return;
+        
         logError('Failed to retrieve profile', error);
         return res.status(500).json({error: (error as Error).message});
     }
 });
 
-app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
-    if (req.timedout) return;
+app.post('/pin', async (req: Request, res: Response) => {
+    
 
     logInfo('Received profile for pinning:', req.body);
 
@@ -166,7 +160,7 @@ app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
 
         const cid = await persistenceService.pin(validation.sanitizedProfile);
         logInfo('JSON pinned to IPFS with CID:', cid);
-        if (req.timedout) return;
+        
         return res.json({cid: cid});
     } catch (error) {
         logError('Failed to pin JSON:', error);
@@ -174,16 +168,16 @@ app.post('/pin', haltOnTimedout, async (req: Request, res: Response) => {
     }
 });
 
-app.get('/health', haltOnTimedout, async (req: Request, res: Response) => {
-    if (req.timedout) return;
+app.get('/health', async (req: Request, res: Response) => {
+    
     logInfo('Health check initiated');
     try {
         await persistenceService.isHealthy();
-        if (req.timedout) return;
+        
         return res.json({status: 'ok'});
     } catch (error) {
         logError('Failed to connect to IPFS', error);
-        if (req.timedout) return;
+        
         return res.status(500).json({error: (error as Error).message});
     }
 });
