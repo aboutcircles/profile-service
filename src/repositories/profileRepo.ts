@@ -99,7 +99,7 @@ export class ProfileRepository {
             LIMIT ?
         `;
 
-        const results = db.prepare(sql).all([...addresses, config.maxListSize]);
+        const results = db.prepare(sql).all([...addresses, config.maxAddressesSearchSize]);
 
         // Convert DB results to Profile objects with geoLocation array
         return results.map((row: any) => {
