@@ -88,7 +88,24 @@ export class IndexerService {
     // 5) Flush any subscription events that arrived during the catch-up.
     //    Now these "live" events are guaranteed to be from strictly newer blocks.
     logInfo('Flushing buffered subscription events...');
+    this.flushSubscriptionBuffer();
+    await this.processQueue();
 
+    // 6) Now that the backlog is done, direct any newly arriving subscription events straight to the queue.
+    this.processLiveEvents()
+      .then(() => logInfo('Subscribed to live events. Processing new events...'));
+
+    logInfo('Flushing buffered subscription events...');
+    this.flushSubscriptionBuffer();
+    await this.processQueue();
+
+    // Finally, watch for reorgs
+    this.reorgListening();
+
+    logInfo('IndexerService initialized successfully.');
+  }
+
+  private flushSubscriptionBuffer() {
     for (const event of this.subscriptionBuffer) {
       this.eventQueue.enqueue({
         event,
@@ -96,16 +113,6 @@ export class IndexerService {
       } as EventEnvelope);
     }
     this.subscriptionBuffer = [];
-    await this.processQueue();
-
-    // 6) Now that the backlog is done, direct any newly arriving subscription events straight to the queue.
-    this.processLiveEvents()
-      .then(() => logInfo('Subscribed to live events. Processing new events...'));
-
-    // Finally, watch for reorgs
-    this.reorgListening();
-
-    logInfo('IndexerService initialized successfully.');
   }
 
   /**
@@ -313,7 +320,6 @@ export class IndexerService {
   private async processUpdateMetadataEvent(envelope: EventEnvelope) {
     const {avatar, metadataDigest, blockNumber, transactionHash} = envelope.event;
 
-
     const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
     if (blockNumber <= latestBlock) {
       logInfo(
@@ -323,16 +329,6 @@ export class IndexerService {
     }
 
     if (envelope.retries > 0) {
-      // This is an old event which is retried.
-      // Ignore it if the account already has newer data.
-      const latestBlock = this.profileRepository.getLastProcessedBlockForAddress(avatar);
-      if (latestBlock > envelope.event.blockNumber) {
-        logInfo(
-          `Retry: Discarding old event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}) because there is newer data (block ${envelope.event.blockNumber}).`
-        );
-        return;
-      }
-
       logInfo(`Retry: Retrying event ${envelope.event.$event} for address ${avatar} (tx: ${envelope.event.transactionHash}).. Attempt ${envelope.retries}.`);
     }
 
@@ -464,10 +460,10 @@ export class IndexerService {
     );
 
     // 1) Roll back
-    this.profileRepository.deleteDataOlderThanBlock(startBlock);
+    this.profileRepository.deleteAllEqualOrNewerThanBlock(startBlock);
 
     // 2) Re-fetch events for [startBlock..currentBlockNumber], enqueue them
-    await this.catchUpOnMissedEvents(startBlock, currentBlockNumber);
+    await this.catchUpOnMissedEvents(startBlock - 1 < 0 ? 0 : startBlock - 1, currentBlockNumber);
 
     // 3) Process them in one go
     await this.processQueue();

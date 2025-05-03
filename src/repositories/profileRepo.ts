@@ -39,7 +39,7 @@ export class ProfileRepository {
         WHERE address = ?;
     `)
 
-    private deleteOlderThanBlockStmt = db.prepare(`
+    private deleteAllEqualOrNewerThanBlockStmt = db.prepare(`
         DELETE
         FROM profiles
         WHERE lastUpdatedAt >= ?;
@@ -71,8 +71,8 @@ export class ProfileRepository {
         this.insertOrUpdateProfileStmt.run(dbProfile);
     }
 
-    deleteDataOlderThanBlock(blockNumber: number): void {
-        this.deleteOlderThanBlockStmt.run(blockNumber);
+    deleteAllEqualOrNewerThanBlock(blockNumber: number): void {
+        this.deleteAllEqualOrNewerThanBlockStmt.run(blockNumber);
     }
 
     hasProfile(address: string): boolean {
