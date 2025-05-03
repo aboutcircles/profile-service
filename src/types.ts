@@ -9,7 +9,7 @@ export interface IPFSDataProfile {
 
 export interface Profile {
   address: string;
-  CID: string;
+  CID: string | null;
   lastUpdatedAt: number;
   name: string | null;
   description?: string;

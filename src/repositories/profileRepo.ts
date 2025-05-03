@@ -19,10 +19,10 @@ export class ProfileRepository {
         VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location, @longitude, @latitude)
         ON CONFLICT(address) DO UPDATE
             SET lastUpdatedAt  = excluded.lastUpdatedAt,
-                CID            = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
+                CID            = COALESCE(excluded.CID, profiles.CID),
                 name           = COALESCE(NULLIF(excluded.name, ''), profiles.name),
                 description    = COALESCE(NULLIF(excluded.description, ''), profiles.description),
-                registeredName = COALESCE(excluded.registeredName, profiles.registeredName),
+                registeredName = COALESCE(profiles.registeredName, excluded.registeredName),
                 location       = COALESCE(NULLIF(excluded.location, ''), profiles.location),
                 longitude      = COALESCE(excluded.longitude, profiles.longitude),
                 latitude       = COALESCE(excluded.latitude, profiles.latitude);
