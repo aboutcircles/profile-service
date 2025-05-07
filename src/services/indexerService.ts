@@ -3,7 +3,6 @@ import {createPublicClient, http} from 'viem';
 import {gnosis} from 'viem/chains';
 import config from '../config/config';
 import {ProfileRepository} from '../repositories/profileRepo';
-import {Profile} from '../types';
 import EventQueue from '../queue/eventQueue';
 import {uint8ArrayToCidV0} from '../utils/converters';
 import {logDebug, logError, logInfo, logWarn} from '../utils/logger';
@@ -342,16 +341,19 @@ export class IndexerService {
         // Attempt to fetch IPFS data
         const profileData = await this.persistenceService.getCachedProfile(CID, config.defaultTimeout);
 
+        // Get existing profile to preserve registeredName
+        const existingProfile = this.profileRepository.getProfile(avatar);
+
         // If IPFS data is found, store it all
-        const profile: Profile = {
+        const profile: any = {
             address: avatar,
             CID,
             lastUpdatedAt: blockNumber,
-            name: profileData.name ?? null, // use null if not provided
-            description: profileData.description ?? undefined,
-            registeredName: null,
-            location: profileData.location ?? undefined,
-            geoLocation: profileData.geoLocation ?? undefined
+            name: profileData.name, // use null if not provided
+            description: profileData.description,
+            registeredName: existingProfile?.registeredName, // preserve existing registeredName
+            location: profileData.location,
+            geoLocation: profileData.geoLocation
         };
 
         this.profileRepository.upsertProfile(profile);
@@ -398,17 +400,19 @@ export class IndexerService {
 
         if (name) {
             const address = avatar ?? organization ?? group;
-            const profile: Profile = {
+            
+            // Get existing profile to preserve metadata
+            const existingProfile = this.profileRepository.getProfile(address);
+
+            const profile: any = {
                 address,
-                CID: '', // updated by a future UpdateMetadataDigest event
+                CID: existingProfile?.CID, // preserve existing CID
                 lastUpdatedAt: blockNumber,
-                // In the name-event scenario, we don’t have an IPFS name, so store null or empty
-                // The user wants to allow no name, so let's do null:
-                name: null,
-                description: undefined,
-                registeredName: name,
-                location: undefined,
-                geoLocation: undefined
+                name: existingProfile?.name, // preserve existing name
+                description: existingProfile?.description, // preserve existing description
+                registeredName: name, // new registeredName from the event
+                location: existingProfile?.location, // preserve existing location
+                geoLocation: existingProfile?.geoLocation // preserve existing geoLocation
             };
 
             this.profileRepository.upsertProfile(profile);
