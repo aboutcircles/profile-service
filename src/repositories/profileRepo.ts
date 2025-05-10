@@ -19,13 +19,34 @@ export class ProfileRepository {
         VALUES (@address, @CID, @lastUpdatedAt, @name, @description, @registeredName, @location, @longitude, @latitude)
         ON CONFLICT(address) DO UPDATE
             SET lastUpdatedAt  = excluded.lastUpdatedAt,
-                CID            = COALESCE(NULLIF(excluded.CID, ''), profiles.CID),
-                name           = COALESCE(NULLIF(excluded.name, ''), profiles.name),
-                description    = COALESCE(NULLIF(excluded.description, ''), profiles.description),
-                registeredName = COALESCE(excluded.registeredName, profiles.registeredName),
-                location       = COALESCE(NULLIF(excluded.location, ''), profiles.location),
-                longitude      = COALESCE(excluded.longitude, profiles.longitude),
-                latitude       = COALESCE(excluded.latitude, profiles.latitude);
+                CID           = CASE 
+                    WHEN excluded.CID IS NOT NULL AND excluded.CID != '' THEN excluded.CID 
+                    ELSE profiles.CID 
+                END,
+                name          = CASE 
+                    WHEN excluded.name IS NOT NULL AND excluded.name != '' THEN excluded.name 
+                    ELSE profiles.name 
+                END,
+                description   = CASE 
+                    WHEN excluded.description IS NOT NULL AND excluded.description != '' THEN excluded.description 
+                    ELSE profiles.description 
+                END,
+                registeredName = CASE 
+                    WHEN excluded.registeredName IS NOT NULL THEN excluded.registeredName 
+                    ELSE profiles.registeredName 
+                END,
+                location      = CASE 
+                    WHEN excluded.location IS NOT NULL AND excluded.location != '' THEN excluded.location 
+                    ELSE profiles.location 
+                END,
+                longitude     = CASE 
+                    WHEN excluded.longitude IS NOT NULL THEN excluded.longitude 
+                    ELSE profiles.longitude 
+                END,
+                latitude      = CASE 
+                    WHEN excluded.latitude IS NOT NULL THEN excluded.latitude 
+                    ELSE profiles.latitude 
+                END;
     `);
 
     private getLastProcessedBlockStmt: Statement<any[], { lastProcessed: number }> = db.prepare(`
@@ -47,6 +68,21 @@ export class ProfileRepository {
 
     private hasProfileStmt = db.prepare(`
         SELECT 1
+        FROM profiles
+        WHERE address = ?
+        LIMIT 1;
+    `);
+
+    private getProfileStmt = db.prepare(`
+        SELECT address,
+               name,
+               description,
+               CID,
+               lastUpdatedAt,
+               registeredName,
+               location,
+               longitude,
+               latitude
         FROM profiles
         WHERE address = ?
         LIMIT 1;
@@ -77,6 +113,29 @@ export class ProfileRepository {
 
     hasProfile(address: string): boolean {
         return this.hasProfileStmt.get(address) !== undefined;
+    }
+
+    getProfile(address: string): Profile | null {
+        const row = this.getProfileStmt.get(address) as any;
+        
+        if (!row) return null;
+
+        const profile: Profile = {
+            address: row.address,
+            CID: row.CID,
+            lastUpdatedAt: row.lastUpdatedAt,
+            name: row.name,
+            description: row.description ?? undefined,
+            registeredName: row.registeredName,
+            location: row.location ?? undefined
+        };
+
+        // Add geoLocation only if both longitude and latitude exist
+        if (row.longitude !== null && row.latitude !== null) {
+            profile.geoLocation = [row.longitude, row.latitude];
+        }
+
+        return profile;
     }
 
     searchProfilesByAddresses(addresses: string[]): Profile[] {
