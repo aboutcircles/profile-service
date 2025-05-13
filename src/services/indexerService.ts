@@ -157,36 +157,59 @@ export class IndexerService {
      * Enqueue them for processing (older events).
      */
     private async catchUpOnMissedEvents(fromBlock: number, toBlock: number) {
-        try {
-            const events = await this.circlesData.getEvents(
-                null,
-                fromBlock + 1,
-                toBlock,
-                [
-                    'CrcV1_UpdateMetadataDigest',
-                    'CrcV2_UpdateMetadataDigest',
-                    'CrcV2_RegisterShortName',
-                    'CrcV2_RegisterGroup',
-                    'CrcV2_RegisterOrganization',
-                ],
-                [],
-                true
-            );
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_MS = 500;
 
-            logInfo(
-                `Catching up on missed events: ${events.length} total from block ${fromBlock + 1} to ${toBlock}.`
-            );
-
-            // Enqueue all these older events
-            for (const event of events) {
-                this.eventQueue.enqueue({
-                    event,
-                    retries: 0,  // first time we see this event
-                } as EventEnvelope);
+        const tryFetch = async (attempt: number): Promise<void> => {
+            const isRetry = attempt > 0;
+            if (isRetry) {
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
             }
-        } catch (e) {
-            logError('Error fetching events:', e);
-        }
+
+            try {
+                const events = await this.circlesData.getEvents(
+                  null,
+                  fromBlock + 1,
+                  toBlock,
+                  [
+                      'CrcV1_UpdateMetadataDigest',
+                      'CrcV2_UpdateMetadataDigest',
+                      'CrcV2_RegisterShortName',
+                      'CrcV2_RegisterGroup',
+                      'CrcV2_RegisterOrganization',
+                  ],
+                  [],
+                  true
+                );
+
+                logInfo(
+                  `Catching up on missed events: ${events.length} total from block ${
+                    fromBlock + 1
+                  } to ${toBlock}.`
+                );
+
+                for (const event of events) {
+                    this.eventQueue.enqueue({
+                        event,
+                        retries: 0,
+                    } as EventEnvelope);
+                }
+            } catch (error) {
+                const hasMoreRetries = attempt < MAX_RETRIES;
+                if (hasMoreRetries) {
+                    logWarn(
+                      `Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed, retrying in ${RETRY_DELAY_MS} ms…`,
+                      error
+                    );
+                    await tryFetch(attempt + 1);
+                } else {
+                    logError(`Failed to fetch events after ${MAX_RETRIES + 1} attempts`, error);
+                    throw error;
+                }
+            }
+        };
+
+        await tryFetch(0);
     }
 
     /**
@@ -263,7 +286,9 @@ export class IndexerService {
                     logWarn(
                         `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after 5xx: ${e.message}`
                     );
-                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    setTimeout(() => {
+                        this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    }, 500);
                 } else {
                     logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (5xx error).`
@@ -278,7 +303,9 @@ export class IndexerService {
                     logWarn(
                         `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after timeout: ${e.message}`
                     );
-                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    setTimeout(() => {
+                        this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    }, 500);
                 } else {
                     logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (timeout).`
@@ -400,7 +427,7 @@ export class IndexerService {
 
         if (name) {
             const address = avatar ?? organization ?? group;
-            
+
             // Get existing profile to preserve metadata
             const existingProfile = this.profileRepository.getProfile(address);
 
