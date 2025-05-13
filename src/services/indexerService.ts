@@ -263,7 +263,9 @@ export class IndexerService {
                     logWarn(
                         `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after 5xx: ${e.message}`
                     );
-                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    setTimeout(() => {
+                        this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    }, 500);
                 } else {
                     logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (5xx error).`
@@ -278,7 +280,9 @@ export class IndexerService {
                     logWarn(
                         `Queueing ${envelope.event.$event} for retry, block ${envelope.event.blockNumber}, attempt ${envelope.retries + 1} after timeout: ${e.message}`
                     );
-                    this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    setTimeout(() => {
+                        this.eventQueue.enqueue({event: envelope.event, retries: envelope.retries + 1});
+                    }, 500);
                 } else {
                     logError(
                         `Giving up on ${envelope.event.$event}, block ${envelope.event.blockNumber} after ${envelope.retries} attempts (timeout).`
