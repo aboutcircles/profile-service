@@ -5,7 +5,7 @@ dotenv.config();
 const config = {
   port: process.env.PORT || 3000,
   rpcEndpoint: process.env.RPC_ENDPOINT || 'https://rpc.aboutcircles.com/',
-  wsEndpoint: process.env.WS_ENDPOINT || 'wss://rpc.aboutcircles.com/ws/',
+  wsEndpoint: process.env.WS_ENDPOINT,
   databasePath: process.env.DATABASE_PATH,
   ipfs: {
     host: process.env.IPFS_HOST || 'localhost',
