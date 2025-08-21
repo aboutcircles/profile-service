@@ -31,9 +31,31 @@ export class PinningService implements PersistenceService {
         this.initialize();
     }
 
-    isHealthy(): Promise<boolean> {
-        // implement your own health check if needed
-        throw new Error('Method not implemented.');
+    async isHealthy(): Promise<boolean> {
+        // For S3/pinning service, we can check if we can create an S3 client
+        // and if the required config is available
+        try {
+            if (!config.s3Key || !config.s3Secret || !config.s3Bucket || !config.s3ApiUrl) {
+                logError('S3 configuration is incomplete for health check');
+                return false;
+            }
+
+            // Create S3 client to test configuration
+            const s3 = new AWS.S3({
+                endpoint: config.s3ApiUrl,
+                region: 'us-east-1',
+                signatureVersion: 'v4',
+                accessKeyId: config.s3Key,
+                secretAccessKey: config.s3Secret,
+            });
+
+            // Try to list buckets as a simple health check
+            await s3.listBuckets().promise();
+            return true;
+        } catch (error) {
+            logError('S3 health check failed', error);
+            return false;
+        }
     }
 
     async pin(profile: IPFSDataProfile): Promise<string> {

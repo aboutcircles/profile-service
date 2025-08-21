@@ -30,6 +30,12 @@ export class KuboService implements PersistenceService {
 
   async isHealthy(): Promise<boolean> {
     try {
+      // Check if IPFS client is initialized
+      if (!this.ipfs) {
+        logError('IPFS client is not initialized yet');
+        return false;
+      }
+      
       await this.ipfs.id();
       return true;
     } catch (error) {

@@ -2,12 +2,11 @@ FROM node:22
 
 WORKDIR /app
 
-COPY ./src ./
+COPY ./src ./src
 COPY ./package.json ./
 COPY ./package-lock.json ./
 COPY ./tsconfig.json ./
 
-RUN npm install -g typescript
 RUN npm install
 RUN npm run build
 
