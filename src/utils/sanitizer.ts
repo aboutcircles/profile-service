@@ -1,6 +1,5 @@
-import { escape } from 'sqlstring';
-import DOMPurify from 'isomorphic-dompurify';
-import { IPFSDataProfile } from '../types';
+import {IPFSDataProfile} from '../types';
+import sanitizeString2 from "./sanitizer2";
 
 export interface ValidationResult<T> {
     isValid: boolean;
@@ -8,184 +7,188 @@ export interface ValidationResult<T> {
     sanitized?: T;
 }
 
-const DANGEROUS_PATTERNS = [
-    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-    /javascript:/gi,
-    /vbscript:/gi,
-    /onclick/gi,
-    /onload/gi,
-    /onerror/gi,
-    /onmouseover/gi,
-    /eval\(/gi,
-    /expression\(/gi
-];
+// sanitizes a string by removing HTML/JS and SQL injection risks
+export function sanitizeString(input: string | null | undefined): string {
 
-function containsDangerousContent(input: string): boolean {
-    return DANGEROUS_PATTERNS.some(pattern => pattern.test(input));
+    return sanitizeString2(input);
 }
 
-// sanitizes a string by removing HTML/JS and SQL injection risks
-export function sanitizeString(input: string | null | undefined): ValidationResult<string> {
-    if (!input) {
-        return { isValid: true, errors: [], sanitized: '' };
+export function sanitizeUrl(imageUrl: string | null | undefined): string {
+    if (!imageUrl) {
+        return "";
     }
 
-    if (containsDangerousContent(input)) {
-        return {
-            isValid: false,
-            errors: ['Input contains potentially dangerous content'],
-        };
+    const trimmed = imageUrl.trim();
+
+    // Detect data URLs
+    if (/^data:/i.test(trimmed)) {
+        const mimeMatch = trimmed.match(/^data:([^;,]+)[;,]/i);
+        const mime = mimeMatch ? mimeMatch[1].toLowerCase() : "";
+        if (mime.startsWith("image/")) {
+            // Ensure the data URL is base64‑encoded
+            // The pattern checks for a ';base64,' marker after the MIME type
+            // Validate base64 data URL: ensure it contains only valid base64 characters after the comma
+            const base64Match = trimmed.match(/^data:image\/[^;]+;base64,([^]*)$/i);
+            if (base64Match) {
+                const dataPart = base64Match[1];
+                // Base64 characters: A-Z, a-z, 0-9, +, /, = (padding)
+                if (/^[A-Za-z0-9+/=]+$/.test(dataPart)) {
+                    return trimmed;
+                }
+            }
+            return "unsafe:";
+        }
+        return "unsafe:";
     }
-    
-    // escape SQL special characters
-    const sqlSafe = escape(input).slice(1, -1); // remove the quotes added by escape()
-    
-    // sanitize HTML/JS
-    const sanitized = DOMPurify.sanitize(sqlSafe, {
-        ALLOWED_TAGS: [], // Strip all HTML tags
-        ALLOWED_ATTR: [], // Strip all attributes
-        FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed', 'link'],
-        FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
-    });
+
+    // Reuse the normaliser from sanitizer2 (copied here to avoid circular import)
+    function normalizeAndAllowlistScheme(rawUrl: string): string {
+        let url = (rawUrl ?? "").trim();
+
+        if (url.startsWith("//")) {
+            return "unsafe:";
+        }
+
+        let norm = "";
+        let foundColon = false;
+
+        for (let i = 0; i < url.length && norm.length < 256 && !foundColon;) {
+            const ent = tryDecodeEntity(url, i);
+            if (ent) {
+                const ch = ent.char;
+                if (!isAsciiWsChar(ch)) {
+                    norm += ch;
+                }
+                i += ent.consumed;
+            } else if (url[i] === "%" && i + 2 < url.length && isHex(url[i + 1]) && isHex(url[i + 2])) {
+                const code = parseInt(url.substring(i + 1, i + 3), 16);
+                const ch = String.fromCharCode(code);
+                if (!isAsciiWsChar(ch)) {
+                    norm += ch;
+                }
+                i += 3;
+            } else {
+                const ch = url[i];
+                if (!isAsciiWsChar(ch)) {
+                    norm += ch;
+                }
+                i += 1;
+            }
+
+            const lastCode = norm.charCodeAt(norm.length - 1);
+            if (lastCode === 0xff1a || lastCode === 0x2236) {
+                norm = norm.slice(0, -1) + ":";
+            }
+
+            if (norm.endsWith(":")) {
+                foundColon = true;
+            }
+        }
+
+        norm = norm.replace(/\s*:\s*/, ":");
+
+        const m = /^([A-Za-z][A-Za-z0-9+\-.]*):/.exec(norm);
+        if (m) {
+            const scheme = m[1].toLowerCase();
+            const ALLOWLIST_SCHEMES = new Set(["http", "https", "mailto"]);
+            if (ALLOWLIST_SCHEMES.has(scheme)) {
+                return url.replace(/[\t\n\r\f ]/g, "%20");
+            }
+            return "unsafe:";
+        }
+
+        return url.replace(/[\t\n\r\f ]/g, "%20");
+    }
+
+    function tryDecodeEntity(s: string, i: number): { char: string; consumed: number } | null {
+        if (s[i] !== "&") {
+            return null;
+        }
+        // Only match actual &amp; and &colon;, not any '&'
+        if (s.startsWith("&amp;", i)) {
+            return {char: "&", consumed: 5};
+        }
+        if (s.startsWith("&colon;", i)) {
+            return {char: ":", consumed: 7};
+        }
+        const dec = /^&#([0-9]{1,7});/.exec(s.slice(i));
+        if (dec) {
+            const code = Number.parseInt(dec[1], 10);
+            if (Number.isFinite(code) && code >= 0 && code <= 0x10ffff) {
+                return {char: String.fromCodePoint(code), consumed: dec[0].length};
+            }
+        }
+        const hex = /^&#x([0-9A-Fa-f]{1,6});/.exec(s.slice(i));
+        if (hex) {
+            const code = Number.parseInt(hex[1], 16);
+            if (Number.isFinite(code) && code >= 0 && code <= 0x10ffff) {
+                return {char: String.fromCodePoint(code), consumed: hex[0].length};
+            }
+        }
+        return null;
+    }
+
+    function isAsciiWsChar(ch: string): boolean {
+        return ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === " ";
+    }
+
+    function isHex(ch: string): boolean {
+        const c = ch.charCodeAt(0);
+        return (
+            (c >= 48 && c <= 57) ||
+            (c >= 65 && c <= 70) ||
+            (c >= 97 && c <= 102)
+        );
+    }
+
+    return normalizeAndAllowlistScheme(trimmed);
+}
+
+// strips unknown properties and sanitizes known properties
+export function sanitizeProfile(input: any): IPFSDataProfile {
+    const sanitized: IPFSDataProfile = {
+        name: sanitizeString(input.name) ?? '',
+        description: input.description ? sanitizeString(input.description) : undefined,
+        location: input.location ? sanitizeString(input.location) : undefined,
+        previewImageUrl: input.previewImageUrl ? sanitizeUrl(input.previewImageUrl) : undefined,
+        imageUrl: input.imageUrl ? sanitizeUrl(input.imageUrl) : undefined
+    };
+
+    // Handle geoLocation ([number, number])
+    if (input.geoLocation !== undefined && input.geoLocation !== null) {
+        if (Array.isArray(input.geoLocation) && input.geoLocation.length === 2) {
+            const [longitude, latitude] = input.geoLocation;
+            if (typeof longitude === 'number' && typeof latitude === 'number' &&
+                longitude >= -180 && longitude <= 180 &&
+                latitude >= -90 && latitude <= 90) {
+                sanitized.geoLocation = [longitude, latitude];
+            }
+        }
+    }
+
+    return sanitized;
+}
+
+export function sanitizeSearchParams(params: Record<string, any>): ValidationResult<Record<string, string | undefined>> {
+    const sanitized: Record<string, string | undefined> = {};
+
+    for (const [key, value] of Object.entries(params)) {
+        if (key === 'fetchComplete') {
+            // Boolean handling
+            sanitized[key] = value === 'true' ? 'true' : 'false';
+            continue;
+        }
+
+        if (value !== undefined && value !== null) {
+            sanitized[key] = sanitizeString2(value.toString());
+        } else {
+            sanitized[key] = undefined;
+        }
+    }
 
     return {
         isValid: true,
         errors: [],
         sanitized
-    };
-}
-
-// strips unknown properties and sanitizes known properties
-export function sanitizeProfile(input: any): ValidationResult<IPFSDataProfile> {
-    const errors: string[] = [];
-
-    // no need, cause now we're receiving more props, just ignore them
-    // const knownProperties = ['name', 'description', 'imageUrl', 'previewImageUrl'];
-    // const unknownProps = Object.keys(input).filter(key => !knownProperties.includes(key));
-    // if (unknownProps.length > 0) {
-    //     return {
-    //         isValid: false,
-    //         errors: [`Unknown properties detected: ${unknownProps.join(', ')}`]
-    //     };
-    // }
-
-    const nameResult = sanitizeString(input.name);
-    if (!nameResult.isValid || !nameResult.sanitized) {
-        errors.push('Invalid name: ' + nameResult.errors.join(', '));
-    }
-
-    const sanitized: IPFSDataProfile = {
-        name: nameResult.sanitized || '',
-    };
-
-    if (input.description !== undefined && input.description !== '' && input.description !== null) {
-        const descResult = sanitizeString(input.description);
-        if (!descResult.isValid) {
-            errors.push('Invalid description: ' + descResult.errors.join(', '));
-        }
-        sanitized.description = descResult.sanitized;
-    }
-
-    if (input.imageUrl !== undefined && input.imageUrl !== '' && input.imageUrl !== null) {
-        const urlResult = sanitizeString(input.imageUrl);
-        if (!urlResult.isValid || !urlResult.sanitized) {
-            errors.push('Invalid imageUrl: ' + urlResult.errors.join(', '));
-        }
-        sanitized.imageUrl = urlResult.sanitized;
-    }
-
-    if (input.previewImageUrl !== undefined && input.previewImageUrl !== '' && input.previewImageUrl !== null) {
-        const urlResult = sanitizeString(input.previewImageUrl);
-        if (!urlResult.isValid || !urlResult.sanitized) {
-            errors.push('Invalid previewImageUrl: ' + urlResult.errors.join(', '));
-        }
-        sanitized.previewImageUrl = urlResult.sanitized;
-    }
-
-    // Handle location (string)
-    if (input.location !== undefined && input.location !== '' && input.location !== null) {
-        const locationResult = sanitizeString(input.location);
-        if (!locationResult.isValid || !locationResult.sanitized) {
-            errors.push('Invalid location: ' + locationResult.errors.join(', '));
-        }
-
-        if(input.location.length > 160) {
-            errors.push('Invalid location string length (max. 160 characters)');
-        }
-
-        sanitized.location = locationResult.sanitized;
-    }
-
-    // Handle geoLocation ([number, number])
-    if (input.geoLocation !== undefined && input.geoLocation !== null) {
-        // Check if it's an array with exactly 2 elements
-        if (Array.isArray(input.geoLocation) && input.geoLocation.length === 2) {
-            const [longitude, latitude] = input.geoLocation;
-            
-            // Validate longitude (-180 to 180)
-            if (typeof longitude !== 'number' || longitude < -180 || longitude > 180) {
-                errors.push('Invalid geoLocation: longitude must be a number between -180 and 180');
-            }
-            
-            // Validate latitude (-90 to 90)
-            if (typeof latitude !== 'number' || latitude < -90 || latitude > 90) {
-                errors.push('Invalid geoLocation: latitude must be a number between -90 and 90');
-            }
-            
-            // Only assign if both values are valid
-            if (typeof longitude === 'number' && typeof latitude === 'number' && 
-                longitude >= -180 && longitude <= 180 && 
-                latitude >= -90 && latitude <= 90) {
-                sanitized.geoLocation = [longitude, latitude];
-            }
-        } else {
-            errors.push('Invalid geoLocation: must be an array with exactly 2 numbers [longitude, latitude]');
-        }
-    }
-
-    return {
-        isValid: errors.length === 0,
-        errors,
-        sanitized: errors.length === 0 ? sanitized : undefined
-    };
-}
-
-export function sanitizeSearchParams(params: Record<string, any>): ValidationResult<Record<string, string | undefined>> {
-    const sanitized: Record<string, string | undefined> = {};
-    const errors: string[] = [];
-    
-    for (const [key, value] of Object.entries(params)) {
-        if (key === 'fetchComplete') {
-            // Special handling for boolean parameter
-            sanitized[key] = value === 'true' ? 'true' : 'false';
-            continue;
-        }
-        
-        // Handle location parameter specifically
-        if (key === 'location' && value !== undefined && value !== null) {
-            const result = sanitizeString(value.toString());
-            if (!result.isValid) {
-                errors.push(`Invalid location: ${result.errors.join(', ')}`);
-            }
-            sanitized[key] = result.sanitized;
-            continue;
-        }
-        
-        // Handle all other string parameters
-        if (value !== undefined && value !== null) {
-            const result = sanitizeString(value.toString());
-            if (!result.isValid) {
-                errors.push(`Invalid ${key}: ${result.errors.join(', ')}`);
-            }
-            sanitized[key] = result.sanitized;
-        } else {
-            sanitized[key] = undefined;
-        }
-    }
-    
-    return {
-        isValid: errors.length === 0,
-        errors,
-        sanitized: errors.length === 0 ? sanitized : undefined
     };
 }
