@@ -1,5 +1,5 @@
-import sanitizeString2 from "../src/utils/sanitizer2";
-import {sanitizeProfile, sanitizeUrl} from "../src/utils/sanitizer";
+import sanitizeString2 from "../utils/sanitizer2";
+import {sanitizeProfile, sanitizeUrl} from "../utils/sanitizer";
 
 const S = (x: any) => sanitizeString2(x);
 
